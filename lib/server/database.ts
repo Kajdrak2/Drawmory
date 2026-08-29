@@ -27,6 +27,10 @@ const schemaStatements = [
     byte_size INTEGER NOT NULL,
     sha256 TEXT NOT NULL,
     country_code TEXT NOT NULL DEFAULT 'UNKNOWN',
+    city TEXT,
+    latitude REAL,
+    longitude REAL,
+    location_precision TEXT NOT NULL DEFAULT 'NONE',
     created_at INTEGER NOT NULL,
     UNIQUE(journey_id, step_index)
   )`,
@@ -75,6 +79,13 @@ const schemaStatements = [
   `PRAGMA optimize`,
 ];
 
+const drawingLocationMigrations = [
+  `ALTER TABLE drawings ADD COLUMN city TEXT`,
+  `ALTER TABLE drawings ADD COLUMN latitude REAL`,
+  `ALTER TABLE drawings ADD COLUMN longitude REAL`,
+  `ALTER TABLE drawings ADD COLUMN location_precision TEXT NOT NULL DEFAULT 'NONE'`,
+];
+
 let schemaReady: Promise<void> | undefined;
 
 export function getDatabase() {
@@ -94,7 +105,17 @@ export function getFiles() {
 export async function ensureSchema() {
   schemaReady ??= getDatabase()
     .batch(schemaStatements.map((statement) => getDatabase().prepare(statement)))
-    .then(() => undefined)
+    .then(async () => {
+      for (const statement of drawingLocationMigrations) {
+        try {
+          await getDatabase().prepare(statement).run();
+        } catch (error) {
+          if (!(error instanceof Error) || !error.message.toLowerCase().includes('duplicate column')) {
+            throw error;
+          }
+        }
+      }
+    })
     .catch((error) => {
       schemaReady = undefined;
       throw error;

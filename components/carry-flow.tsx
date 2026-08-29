@@ -10,6 +10,8 @@ import { DocumentLink } from './document-link';
 import { DrawingCanvas, DrawingCanvasHandle } from './drawing-canvas';
 import { useLanguage } from './language-provider';
 import { SiteHeader } from './site-header';
+import { LocationPicker } from './location-picker';
+import type { DrawingLocationInput } from '@/lib/location';
 
 type ClaimState = {
   claimId: string;
@@ -30,6 +32,7 @@ type SubmissionResult = {
   publicSlug: string;
   receiptToken: string;
   completed: boolean;
+  autoForwarded: boolean;
   redrawCount: number;
   targetRedraws: number;
 };
@@ -48,6 +51,7 @@ export function CarryFlow({ claimId }: { claimId: string }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [emptyExpired, setEmptyExpired] = useState(false);
+  const [location, setLocation] = useState<DrawingLocationInput>({});
   const effectivePhase =
     claim?.phase === 'observing' &&
     claim.revealStartedAt &&
@@ -68,7 +72,7 @@ export function CarryFlow({ claimId }: { claimId: string }) {
     try {
       const result = await apiFetch<SubmissionResult>(
         `/api/claims/${encodeURIComponent(claimId)}/submit`,
-        { method: 'POST', body: JSON.stringify({ imageDataUrl }) },
+        { method: 'POST', body: JSON.stringify({ imageDataUrl, location }) },
       );
       saveReceipt({
         token: result.receiptToken,
@@ -78,6 +82,8 @@ export function CarryFlow({ claimId }: { claimId: string }) {
       });
       if (result.completed) {
         navigateTo(`/journey/${encodeURIComponent(result.publicSlug)}`);
+      } else if (result.autoForwarded) {
+        navigateTo(`/receipt/${encodeURIComponent(result.receiptToken)}`);
       } else {
         navigateTo(
           `/pass/${encodeURIComponent(result.journeyId)}#receipt=${encodeURIComponent(result.receiptToken)}`,
@@ -87,7 +93,7 @@ export function CarryFlow({ claimId }: { claimId: string }) {
       setError(caught instanceof Error ? caught.message : 'The drawing could not be submitted.');
       setBusy(false);
     }
-  }, [busy, claim, claimId]);
+  }, [busy, claim, claimId, location]);
 
   useEffect(() => {
     apiFetch<ClaimState>(`/api/claims/${encodeURIComponent(claimId)}`)
@@ -234,7 +240,9 @@ export function CarryFlow({ claimId }: { claimId: string }) {
       <section className="flow-shell draw-memory-shell">
         <div className="drawing-heading-row">
           <div className="flow-heading">
-            <span className="flow-kicker">Redraw · {claim.redrawCount + 1}/{claim.targetRedraws}</span>
+            <span className="flow-kicker">
+              Redraw · {claim.redrawCount + 1}/{claim.targetRedraws < 0 ? '∞' : claim.targetRedraws}
+            </span>
             <h1>{t('drawMemory')}</h1>
             <p>{t('redrawHint')}</p>
           </div>
@@ -245,6 +253,7 @@ export function CarryFlow({ claimId }: { claimId: string }) {
         </div>
 
         <DrawingCanvas ref={canvasRef} compact disabled={busy} />
+        <LocationPicker value={location} onChange={setLocation} inheritsPrevious />
         <div className="flow-actions carry-actions">
           <button className="report-button" type="button" onClick={report} disabled={busy}>{t('reportSkip')}</button>
           <button className="primary-button" type="button" onClick={submitDrawing} disabled={busy} data-testid="submit-redraw">

@@ -1,4 +1,4 @@
-import { index, integer, sqliteTable, text, uniqueIndex } from 'drizzle-orm/sqlite-core';
+import { index, integer, real, sqliteTable, text, uniqueIndex } from 'drizzle-orm/sqlite-core';
 
 export const journeys = sqliteTable(
   'journeys',
@@ -36,6 +36,10 @@ export const drawings = sqliteTable(
     byteSize: integer('byte_size').notNull(),
     sha256: text('sha256').notNull(),
     countryCode: text('country_code').notNull().default('UNKNOWN'),
+    city: text('city'),
+    latitude: real('latitude'),
+    longitude: real('longitude'),
+    locationPrecision: text('location_precision').notNull().default('NONE'),
     createdAt: integer('created_at').notNull(),
   },
   (table) => [

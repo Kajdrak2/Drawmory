@@ -9,26 +9,32 @@ import {
   useState,
 } from 'react';
 import { useLanguage } from './language-provider';
+import { useClientReady } from '@/lib/client/hydration';
 
 type Point = { x: number; y: number };
-type DrawingTool = 'brush' | 'fill' | 'line' | 'rectangle' | 'ellipse' | 'eraser';
+type DrawingTool = 'brush' | 'marker' | 'fill' | 'line' | 'rectangle' | 'ellipse' | 'eraser';
 type StrokeAction = {
   kind: 'stroke';
   color: string;
   width: number;
+  opacity: number;
   eraser: boolean;
+  marker: boolean;
   points: Point[];
 };
 type ShapeAction = {
   kind: 'line' | 'rectangle' | 'ellipse';
   color: string;
   width: number;
+  opacity: number;
+  filled: boolean;
   start: Point;
   end: Point;
 };
 type FillAction = {
   kind: 'fill';
   color: string;
+  opacity: number;
   point: Point;
 };
 type DrawingAction = StrokeAction | ShapeAction | FillAction;
@@ -46,15 +52,18 @@ type DrawingCanvasProps = {
 };
 
 const CANVAS_SIZE = 768;
-const COLORS = ['#1d1830', '#ff6b55', '#f5b800', '#3a9d66', '#276ad6', '#7656d6', '#ed4d9a', '#8a5a3b'];
-const WIDTHS = [6, 13, 24];
+const COLORS = [
+  '#1d1830', '#ffffff', '#9b9b9b', '#ff6b55', '#ff9f43', '#ffd54a', '#7bc96f', '#2aa876',
+  '#31c8c8', '#276ad6', '#54a0ff', '#7656d6', '#b46ee0', '#ed4d9a', '#8a5a3b', '#5b3924',
+];
+const WIDTHS = [3, 6, 13, 24, 40];
 
-function hexToRgba(hex: string) {
+function hexToRgb(hex: string) {
   const value = Number.parseInt(hex.slice(1), 16);
-  return [(value >> 16) & 255, (value >> 8) & 255, value & 255, 255] as const;
+  return [(value >> 16) & 255, (value >> 8) & 255, value & 255] as const;
 }
 
-function floodFill(context: CanvasRenderingContext2D, point: Point, color: string) {
+function floodFill(context: CanvasRenderingContext2D, point: Point, color: string, opacity: number) {
   const { width, height } = context.canvas;
   const x = Math.max(0, Math.min(width - 1, Math.floor(point.x)));
   const y = Math.max(0, Math.min(height - 1, Math.floor(point.y)));
@@ -68,8 +77,13 @@ function floodFill(context: CanvasRenderingContext2D, point: Point, color: strin
     data[startOffset + 2],
     data[startOffset + 3],
   ];
-  const replacement = hexToRgba(color);
-  if (target.every((channel, index) => channel === replacement[index])) return;
+  const replacement = hexToRgb(color);
+  if (
+    opacity === 1 &&
+    target[0] === replacement[0] &&
+    target[1] === replacement[1] &&
+    target[2] === replacement[2]
+  ) return;
 
   const tolerance = 10;
   const matchesTarget = (pixel: number) => {
@@ -83,10 +97,10 @@ function floodFill(context: CanvasRenderingContext2D, point: Point, color: strin
   };
   const replacePixel = (pixel: number) => {
     const offset = pixel * 4;
-    data[offset] = replacement[0];
-    data[offset + 1] = replacement[1];
-    data[offset + 2] = replacement[2];
-    data[offset + 3] = replacement[3];
+    data[offset] = Math.round(replacement[0] * opacity + data[offset] * (1 - opacity));
+    data[offset + 1] = Math.round(replacement[1] * opacity + data[offset + 1] * (1 - opacity));
+    data[offset + 2] = Math.round(replacement[2] * opacity + data[offset + 2] * (1 - opacity));
+    data[offset + 3] = 255;
   };
 
   const queue = new Int32Array(width * height);
@@ -120,15 +134,20 @@ function floodFill(context: CanvasRenderingContext2D, point: Point, color: strin
 
 function paintAction(context: CanvasRenderingContext2D, action: DrawingAction) {
   if (action.kind === 'fill') {
-    floodFill(context, action.point, action.color);
+    floodFill(context, action.point, action.color, action.opacity);
     return;
   }
 
   context.save();
   context.strokeStyle = action.kind === 'stroke' && action.eraser ? '#fffdf8' : action.color;
   context.fillStyle = action.kind === 'stroke' && action.eraser ? '#fffdf8' : action.color;
+  context.globalAlpha = action.kind === 'stroke' && action.eraser
+    ? 1
+    : action.kind === 'stroke' && action.marker
+      ? Math.min(action.opacity, 0.45)
+      : action.opacity;
   context.lineWidth = action.width;
-  context.lineCap = 'round';
+  context.lineCap = action.kind === 'stroke' && action.marker ? 'square' : 'round';
   context.lineJoin = 'round';
 
   if (action.kind === 'stroke') {
@@ -172,16 +191,23 @@ function paintAction(context: CanvasRenderingContext2D, action: DrawingAction) {
       Math.PI * 2,
     );
   }
+  if (action.kind !== 'line' && action.filled) context.fill();
   context.stroke();
   context.restore();
 }
 
-function hasVisibleDrawing(actions: DrawingAction[]) {
-  return actions.some((action) => {
-    if (action.kind === 'fill') return true;
-    if (action.kind === 'stroke') return !action.eraser && action.points.length > 0;
-    return Math.hypot(action.end.x - action.start.x, action.end.y - action.start.y) > 2;
-  });
+function canvasHasVisibleInk(canvas: HTMLCanvasElement | null) {
+  const context = canvas?.getContext('2d', { willReadFrequently: true });
+  if (!canvas || !context) return false;
+  const data = context.getImageData(0, 0, canvas.width, canvas.height).data;
+  for (let offset = 0; offset < data.length; offset += 4) {
+    if (
+      Math.abs(data[offset] - 255) > 8 ||
+      Math.abs(data[offset + 1] - 253) > 8 ||
+      Math.abs(data[offset + 2] - 248) > 8
+    ) return true;
+  }
+  return false;
 }
 
 export const DrawingCanvas = forwardRef<DrawingCanvasHandle, DrawingCanvasProps>(
@@ -193,7 +219,10 @@ export const DrawingCanvas = forwardRef<DrawingCanvasHandle, DrawingCanvasProps>
     const [redoStack, setRedoStack] = useState<DrawingAction[]>([]);
     const [color, setColor] = useState(COLORS[0]);
     const [width, setWidth] = useState(WIDTHS[1]);
+    const [opacity, setOpacity] = useState(1);
+    const [filledShapes, setFilledShapes] = useState(false);
     const [tool, setTool] = useState<DrawingTool>('brush');
+    const ready = useClientReady();
 
     const renderActions = useCallback((nextActions: DrawingAction[]) => {
       const canvas = canvasRef.current;
@@ -206,7 +235,7 @@ export const DrawingCanvas = forwardRef<DrawingCanvasHandle, DrawingCanvasProps>
 
     useEffect(() => {
       renderActions(actions);
-      onDrawingChange?.(hasVisibleDrawing(actions));
+      onDrawingChange?.(canvasHasVisibleInk(canvasRef.current));
     }, [actions, onDrawingChange, renderActions]);
 
     const pointFromEvent = (event: React.PointerEvent<HTMLCanvasElement>): Point => {
@@ -222,7 +251,7 @@ export const DrawingCanvas = forwardRef<DrawingCanvasHandle, DrawingCanvasProps>
       event.preventDefault();
       const point = pointFromEvent(event);
       if (tool === 'fill') {
-        const action: FillAction = { kind: 'fill', color, point };
+        const action: FillAction = { kind: 'fill', color, opacity, point };
         const nextActions = [...actions, action];
         setActions(nextActions);
         setRedoStack([]);
@@ -232,15 +261,17 @@ export const DrawingCanvas = forwardRef<DrawingCanvasHandle, DrawingCanvasProps>
 
       event.currentTarget.setPointerCapture(event.pointerId);
       const action: StrokeAction | ShapeAction =
-        tool === 'brush' || tool === 'eraser'
+        tool === 'brush' || tool === 'marker' || tool === 'eraser'
           ? {
               kind: 'stroke',
               color,
-              width,
+              width: tool === 'marker' ? width * 1.8 : width,
+              opacity,
               eraser: tool === 'eraser',
+              marker: tool === 'marker',
               points: [point],
             }
-          : { kind: tool, color, width, start: point, end: point };
+          : { kind: tool, color, width, opacity, filled: filledShapes, start: point, end: point };
       activeAction.current = action;
       const context = event.currentTarget.getContext('2d', { willReadFrequently: true });
       if (context) paintAction(context, action);
@@ -283,19 +314,22 @@ export const DrawingCanvas = forwardRef<DrawingCanvasHandle, DrawingCanvasProps>
 
     useImperativeHandle(ref, () => ({
       exportImage: () => {
-        if (!hasVisibleDrawing(actions)) return null;
         renderActions(actions);
         const canvas = canvasRef.current;
-        if (!canvas) return null;
+        if (!canvas || !canvasHasVisibleInk(canvas)) return null;
         const webp = canvas.toDataURL('image/webp', 0.82);
         return webp.startsWith('data:image/webp') ? webp : canvas.toDataURL('image/png');
       },
       clear,
-      isEmpty: () => !hasVisibleDrawing(actions),
+      isEmpty: () => {
+        renderActions(actions);
+        return !canvasHasVisibleInk(canvasRef.current);
+      },
     }));
 
     const tools: Array<{ id: DrawingTool; symbol: string; label: string }> = [
       { id: 'brush', symbol: '✎', label: t('brushTool') },
+      { id: 'marker', symbol: '▰', label: t('markerTool') },
       { id: 'fill', symbol: '▣', label: t('fillTool') },
       { id: 'line', symbol: '╱', label: t('lineTool') },
       { id: 'rectangle', symbol: '□', label: t('rectangleTool') },
@@ -313,6 +347,7 @@ export const DrawingCanvas = forwardRef<DrawingCanvasHandle, DrawingCanvasProps>
             height={CANVAS_SIZE}
             aria-label={t('drawingCanvas')}
             data-testid="drawing-canvas"
+            data-ready={ready ? 'true' : 'false'}
             onPointerDown={handlePointerDown}
             onPointerMove={handlePointerMove}
             onPointerUp={finishAction}
@@ -356,7 +391,43 @@ export const DrawingCanvas = forwardRef<DrawingCanvasHandle, DrawingCanvasProps>
                 disabled={disabled}
               />
             ))}
+            <label className="custom-color-control" title={t('customColor')}>
+              <input
+                type="color"
+                value={color}
+                aria-label={t('customColor')}
+                onChange={(event) => {
+                  setColor(event.target.value);
+                  setTool((current) => (current === 'eraser' ? 'brush' : current));
+                }}
+                disabled={disabled}
+              />
+              <span aria-hidden="true">+</span>
+            </label>
           </div>
+
+          <label className="range-control">
+            <span>{t('opacityTool')} <strong>{Math.round(opacity * 100)}%</strong></span>
+            <input
+              type="range"
+              min="20"
+              max="100"
+              step="10"
+              value={Math.round(opacity * 100)}
+              onChange={(event) => setOpacity(Number(event.target.value) / 100)}
+              disabled={disabled}
+            />
+          </label>
+
+          <button
+            className={`tool-button filled-shape-button${filledShapes ? ' active' : ''}`}
+            type="button"
+            aria-pressed={filledShapes}
+            onClick={() => setFilledShapes((current) => !current)}
+            disabled={disabled}
+          >
+            <span aria-hidden="true">▣</span> {t('filledShapes')}
+          </button>
 
           <div className="tool-row">
             <div className="tool-group width-tools" aria-label={t('strokeWidthTool')}>

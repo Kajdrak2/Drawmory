@@ -58,14 +58,25 @@ export function ReceiptFlow({ token }: { token: string }) {
             <span className="result-icon result-check">✓</span>
             <p className="flow-kicker">Memory receipt · #{receipt.contributionStep + 1}</p>
             <h1>{t('carried')}</h1>
-            <p>{t('progress', { current: receipt.redrawCount, target: receipt.targetRedraws })}</p>
-            <div className="journey-progress" aria-label={`${receipt.redrawCount} of ${receipt.targetRedraws}`}>
-              {Array.from({ length: receipt.targetRedraws + 1 }, (_, index) => (
-                <span key={index} className={index <= receipt.redrawCount ? 'complete' : ''}>
-                  {index === receipt.contributionStep ? <i>You</i> : null}
-                </span>
-              ))}
-            </div>
+            <p>
+              {receipt.targetRedraws < 0
+                ? t('openProgress', { count: receipt.redrawCount + 1 })
+                : t('progress', { current: receipt.redrawCount, target: receipt.targetRedraws })}
+            </p>
+            {receipt.targetRedraws < 0 ? (
+              <div className="infinite-progress" aria-label={t('openProgress', { count: receipt.redrawCount + 1 })}>
+                <strong>{receipt.redrawCount + 1}</strong><span>→</span><b>∞</b>
+              </div>
+            ) : (
+              <div className="journey-progress" aria-label={`${receipt.redrawCount} of ${receipt.targetRedraws}`}>
+                {Array.from({ length: receipt.targetRedraws + 1 }, (_, index) => (
+                  <span key={index} className={index <= receipt.redrawCount ? 'complete' : ''}>
+                    {index === receipt.contributionStep ? <i>You</i> : null}
+                  </span>
+                ))}
+              </div>
+            )}
+            {receipt.status === 'AVAILABLE_WORLD' ? <p className="world-auto-note">{t('worldContinuesAutomatically')}</p> : null}
             {receipt.status === 'COMPLETED' ? (
               <DocumentLink className="primary-button wide-button" href={`/journey/${receipt.publicSlug}`}>
                 {t('seeReveal')} →

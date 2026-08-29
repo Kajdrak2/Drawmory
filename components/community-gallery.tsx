@@ -6,6 +6,7 @@ import { useEffect, useRef, useState } from 'react';
 import { apiFetch } from '@/lib/client/api';
 import { DocumentLink } from './document-link';
 import { useLanguage } from './language-provider';
+import { getOrCreateVoterToken, readVotedJourneys, rememberVote } from '@/lib/client/voting';
 
 type JourneyCardData = {
   publicSlug: string;
@@ -17,39 +18,22 @@ type JourneyCardData = {
   completedAt: number | null;
   voteCount: number;
   coverImageUrl: string | null;
+  drawingPreviews: Array<{
+    id: string;
+    stepIndex: number;
+    countryCode: string;
+    city: string | null;
+    imageUrl: string;
+  }>;
 };
 
 type JourneyListResponse = { items: JourneyCardData[] };
 type StatusFilter = 'all' | 'completed' | 'in_progress';
 type SortFilter = 'random' | 'newest' | 'oldest' | 'progress' | 'votes';
 
-const VOTER_TOKEN_KEY = 'drawmoryVoterToken';
-const VOTED_JOURNEYS_KEY = 'drawmoryVotedJourneys';
-
-function readVotedJourneys() {
-  try {
-    const parsed = JSON.parse(window.localStorage.getItem(VOTED_JOURNEYS_KEY) ?? '[]');
-    return new Set<string>(Array.isArray(parsed) ? parsed.filter((item) => typeof item === 'string') : []);
-  } catch {
-    return new Set<string>();
-  }
-}
-
-function rememberVote(publicSlug: string) {
-  const voted = readVotedJourneys();
-  voted.add(publicSlug);
-  try {
-    window.localStorage.setItem(VOTED_JOURNEYS_KEY, JSON.stringify([...voted]));
-  } catch {
-    // The server still enforces one vote for the current voter token.
-  }
-  return voted;
-}
-
 export function CommunityGallery() {
   const { language, t } = useLanguage();
   const carouselRef = useRef<HTMLDivElement>(null);
-  const voterTokenRef = useRef<string | null>(null);
   const [status, setStatus] = useState<StatusFilter>('all');
   const [sort, setSort] = useState<SortFilter>('random');
   const [shuffle, setShuffle] = useState(0);
@@ -57,6 +41,7 @@ export function CommunityGallery() {
   const [hall, setHall] = useState<JourneyCardData[] | null>(null);
   const [votedJourneys, setVotedJourneys] = useState<Set<string>>(new Set());
   const [voting, setVoting] = useState<string | null>(null);
+  const [previewIndexes, setPreviewIndexes] = useState<Record<string, number>>({});
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -85,7 +70,7 @@ export function CommunityGallery() {
 
   useEffect(() => {
     let active = true;
-    apiFetch<JourneyListResponse>('/api/public/journeys?status=completed&sort=votes&limit=6')
+    apiFetch<JourneyListResponse>('/api/public/journeys?status=all&sort=votes&limit=6')
       .then((result) => {
         if (active) setHall(result.items);
       })
@@ -100,24 +85,6 @@ export function CommunityGallery() {
     };
   }, []);
 
-  const getVoterToken = () => {
-    if (voterTokenRef.current) return voterTokenRef.current;
-    try {
-      const saved = window.localStorage.getItem(VOTER_TOKEN_KEY);
-      if (saved) {
-        voterTokenRef.current = saved;
-        return saved;
-      }
-      const created = crypto.randomUUID();
-      window.localStorage.setItem(VOTER_TOKEN_KEY, created);
-      voterTokenRef.current = created;
-      return created;
-    } catch {
-      voterTokenRef.current = crypto.randomUUID();
-      return voterTokenRef.current;
-    }
-  };
-
   const vote = async (journey: JourneyCardData) => {
     if (voting || votedJourneys.has(journey.publicSlug)) return;
     setVoting(journey.publicSlug);
@@ -127,7 +94,7 @@ export function CommunityGallery() {
         `/api/public/journeys/${encodeURIComponent(journey.publicSlug)}/votes`,
         {
           method: 'POST',
-          body: JSON.stringify({ voterToken: getVoterToken() }),
+          body: JSON.stringify({ voterToken: getOrCreateVoterToken() }),
         },
       );
       const updateVote = (item: JourneyCardData) =>
@@ -140,7 +107,7 @@ export function CommunityGallery() {
       );
       setVotedJourneys(rememberVote(journey.publicSlug));
       void apiFetch<JourneyListResponse>(
-        '/api/public/journeys?status=completed&sort=votes&limit=6',
+        '/api/public/journeys?status=all&sort=votes&limit=6',
       ).then((refreshed) => setHall(refreshed.items), () => undefined);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'The vote could not be saved.');
@@ -166,52 +133,93 @@ export function CommunityGallery() {
   const renderCard = (journey: JourneyCardData, rank?: number) => {
     const completed = journey.status === 'COMPLETED';
     const voted = votedJourneys.has(journey.publicSlug);
+    const previews = journey.drawingPreviews ?? [];
+    const activePreviewIndex = Math.min(previewIndexes[journey.publicSlug] ?? 0, Math.max(0, previews.length - 1));
+    const activePreview = previews[activePreviewIndex];
+    const previewImageUrl = activePreview?.imageUrl ?? journey.coverImageUrl;
+    const movePreview = (direction: -1 | 1) => {
+      if (previews.length < 2) return;
+      setPreviewIndexes((current) => ({
+        ...current,
+        [journey.publicSlug]: (activePreviewIndex + direction + previews.length) % previews.length,
+      }));
+    };
+    const progressWidth = journey.targetRedraws < 0
+      ? Math.min(92, 24 + journey.redrawCount * 8)
+      : Math.max(8, (journey.redrawCount / Math.max(1, journey.targetRedraws)) * 100);
     return (
       <article className={`journey-card${rank ? ' fame-card' : ''}`}>
+        <div className="journey-cover">
+          {rank ? <span className="fame-rank">#{rank}</span> : null}
+          <span className={`journey-status${completed ? ' completed' : ''}`}>
+            {completed ? t('finished') : t('inProgress')}
+          </span>
+          {previewImageUrl ? (
+            <img src={previewImageUrl} alt="" loading="lazy" />
+          ) : (
+            <div className="hidden-drawing" aria-hidden="true">
+              <span className="hidden-orbit"><i /></span>
+            </div>
+          )}
+          <DocumentLink
+            className="journey-cover-link"
+            href={`/journey/${encodeURIComponent(journey.publicSlug)}`}
+            aria-label={t('openJourney')}
+          />
+          {previews.length > 1 ? (
+            <>
+              <button
+                className="frame-arrow frame-arrow-previous"
+                type="button"
+                aria-label={t('previousDrawing')}
+                onClick={() => movePreview(-1)}
+              >←</button>
+              <button
+                className="frame-arrow frame-arrow-next"
+                type="button"
+                aria-label={t('nextDrawing')}
+                onClick={() => movePreview(1)}
+              >→</button>
+            </>
+          ) : null}
+          {previews.length ? (
+            <span className="frame-counter" aria-live="polite">
+              {activePreviewIndex + 1}/{previews.length}
+            </span>
+          ) : null}
+        </div>
         <DocumentLink
           className="journey-card-link"
           href={`/journey/${encodeURIComponent(journey.publicSlug)}`}
           aria-label={t('openJourney')}
         >
-          <div className={`journey-cover${completed ? '' : ' journey-cover-hidden'}`}>
-            {rank ? <span className="fame-rank">#{rank}</span> : null}
-            <span className={`journey-status${completed ? ' completed' : ''}`}>
-              {completed ? t('finished') : t('inProgress')}
-            </span>
-            {journey.coverImageUrl ? (
-              <img src={journey.coverImageUrl} alt="" loading="lazy" />
-            ) : (
-              <div className="hidden-drawing" aria-hidden="true">
-                <span className="hidden-orbit"><i /></span>
-                <strong>{journey.redrawCount}/{journey.targetRedraws}</strong>
-              </div>
-            )}
-          </div>
           <div className="journey-card-copy">
             <strong>Drawmory #{journey.publicSlug.slice(0, 5).toUpperCase()}</strong>
             <small>{t('createdOn', { date: formatDate(journey.createdAt) })}</small>
             <div className="journey-progress-mini" aria-label={t('progress', {
               current: journey.redrawCount,
-              target: journey.targetRedraws,
+              target: journey.targetRedraws < 0 ? '∞' : journey.targetRedraws,
             })}>
-              <span style={{ width: `${Math.max(8, (journey.redrawCount / journey.targetRedraws) * 100)}%` }} />
+              <span className={journey.targetRedraws < 0 ? 'open' : ''} style={{ width: `${progressWidth}%` }} />
             </div>
-            {!completed ? <p>{t('drawingHidden')}</p> : null}
+            <p>
+              {journey.targetRedraws < 0
+                ? t('openProgress', { count: journey.participantCount })
+                : t('frameCount', { current: journey.participantCount, total: journey.targetRedraws + 1 })}
+            </p>
           </div>
         </DocumentLink>
         <div className="journey-card-footer">
           <span>{t('voteCount', { count: journey.voteCount })}</span>
-          {completed ? (
-            <button
-              className={`vote-button${voted ? ' voted' : ''}`}
-              type="button"
-              onClick={() => void vote(journey)}
-              disabled={voted || voting === journey.publicSlug}
-              data-testid={`vote-${journey.publicSlug}`}
-            >
-              <span aria-hidden="true">♥</span> {voted ? t('voted') : t('vote')}
-            </button>
-          ) : null}
+          <button
+            className={`vote-button${voted ? ' voted' : ''}`}
+            type="button"
+            onClick={() => void vote(journey)}
+            disabled={voted || voting === journey.publicSlug}
+            data-testid={`vote-${journey.publicSlug}`}
+          >
+            <span aria-hidden="true">♥</span> {voted ? t('voted') : t('vote')}
+          </button>
         </div>
       </article>
     );

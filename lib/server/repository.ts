@@ -1,7 +1,9 @@
 import { SERVER_CONFIG } from './config';
 import { ensureSchema, getDatabase, getFiles } from './database';
 import { validateDataImage } from './image';
+import { normalizeDrawingLocation } from './location';
 import { hashToken, normalizeCode, randomCode, randomId, randomSlug, randomToken } from './tokens';
+import type { DrawingLocationInput, JourneyLocation } from '@/lib/location';
 
 export type JourneyStatus =
   | 'AWAITING_HANDOFF'
@@ -17,7 +19,7 @@ type JourneyRow = {
   status: JourneyStatus;
   target_redraws: number;
   redraw_count: number;
-  handoff_mode: string | null;
+  handoff_mode: 'PRIVATE' | 'WORLD' | null;
   created_at: number;
   updated_at: number;
   completed_at: number | null;
@@ -61,6 +63,10 @@ type DrawingRow = {
   byte_size: number;
   sha256: string;
   country_code: string;
+  city: string | null;
+  latitude: number | null;
+  longitude: number | null;
+  location_precision: JourneyLocation['locationPrecision'];
   created_at: number;
 };
 
@@ -79,16 +85,6 @@ export class HttpError extends Error {
 
 function changes(result: D1Result<unknown>) {
   return Number(result.meta?.changes ?? 0);
-}
-
-function countryFromRequest(request: Request) {
-  const raw =
-    request.headers.get('x-vercel-ip-country') ??
-    request.headers.get('cf-ipcountry') ??
-    request.headers.get('x-country-code') ??
-    'UNKNOWN';
-  const country = raw.trim().toUpperCase();
-  return /^[A-Z]{2}$/.test(country) ? country : 'UNKNOWN';
 }
 
 async function releaseExpiredJourney(journeyId: string) {
@@ -148,13 +144,22 @@ async function releaseAllExpiredJourneys() {
   await Promise.all(rows.results.map((row) => releaseExpiredJourney(row.id)));
 }
 
-export async function createJourney(request: Request, imageDataUrl: string, targetRedraws: number) {
+export async function createJourney(
+  imageDataUrl: string,
+  targetParticipants: number | 'infinite',
+  location?: DrawingLocationInput | null,
+) {
   await ensureSchema();
-  if (targetRedraws !== 3 && targetRedraws !== 5) {
-    throw new HttpError(400, 'INVALID_LENGTH', 'Choose a journey of 3 or 5 redraws.');
+  if (
+    targetParticipants !== 'infinite' &&
+    (!Number.isInteger(targetParticipants) || targetParticipants < 2 || targetParticipants > 50)
+  ) {
+    throw new HttpError(400, 'INVALID_LENGTH', 'Choose between 2 and 50 participants, or no limit.');
   }
 
   const image = await validateDataImage(imageDataUrl);
+  const targetRedraws = targetParticipants === 'infinite' ? -1 : targetParticipants - 1;
+  const drawingLocation = normalizeDrawingLocation(location);
   const now = Date.now();
   const journeyId = randomId('jny');
   const drawingId = randomId('drw');
@@ -163,7 +168,6 @@ export async function createJourney(request: Request, imageDataUrl: string, targ
   const receiptHash = await hashToken(receiptToken);
   const publicSlug = randomSlug();
   const storagePath = `journeys/${journeyId}/0-${drawingId}.${image.extension}`;
-  const countryCode = countryFromRequest(request);
 
   await getFiles().put(storagePath, image.bytes, {
     httpMetadata: { contentType: image.mimeType },
@@ -185,8 +189,9 @@ export async function createJourney(request: Request, imageDataUrl: string, targ
         .prepare(
           `INSERT INTO drawings (
             id, journey_id, step_index, storage_path, mime_type, width, height,
-            byte_size, sha256, country_code, created_at
-          ) VALUES (?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            byte_size, sha256, country_code, city, latitude, longitude,
+            location_precision, created_at
+          ) VALUES (?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         )
         .bind(
           drawingId,
@@ -197,7 +202,11 @@ export async function createJourney(request: Request, imageDataUrl: string, targ
           image.height,
           image.bytes.byteLength,
           image.sha256,
-          countryCode,
+          drawingLocation.countryCode,
+          drawingLocation.city,
+          drawingLocation.latitude,
+          drawingLocation.longitude,
+          drawingLocation.locationPrecision,
           now,
         ),
       database
@@ -212,7 +221,7 @@ export async function createJourney(request: Request, imageDataUrl: string, targ
     throw error;
   }
 
-  return { journeyId, publicSlug, receiptToken, targetRedraws };
+  return { journeyId, publicSlug, receiptToken, targetRedraws, targetParticipants };
 }
 
 export async function chooseHandoff(
@@ -244,6 +253,12 @@ export async function chooseHandoff(
   }
   if (journey.status === 'EXPIRED') {
     throw new HttpError(410, 'JOURNEY_EXPIRED', 'This Drawmory can no longer travel.');
+  }
+  if (journey.handoff_mode === 'WORLD') {
+    if (mode !== 'WORLD') {
+      throw new HttpError(409, 'WORLD_MODE_LOCKED', 'This Drawmory now travels through the world.');
+    }
+    return { mode: 'WORLD' as const, publicSlug: journey.public_slug, locked: true };
   }
 
   const now = Date.now();
@@ -513,7 +528,8 @@ async function authenticatedClaim(request: Request, claimId: string) {
     .prepare(
       `SELECT c.*, j.public_slug, j.status AS journey_status, j.target_redraws,
               j.redraw_count, j.current_drawing_id, j.reservation_expires_at AS journey_expires_at,
-              d.storage_path, d.mime_type
+              j.handoff_mode, d.storage_path, d.mime_type, d.country_code, d.city,
+              d.latitude, d.longitude, d.location_precision
        FROM claims c JOIN journeys j ON j.id = c.journey_id
        JOIN drawings d ON d.id = j.current_drawing_id
        WHERE c.id = ? AND c.session_token_hash = ?`,
@@ -529,6 +545,12 @@ async function authenticatedClaim(request: Request, claimId: string) {
         journey_expires_at: number | null;
         storage_path: string;
         mime_type: 'image/png' | 'image/webp';
+        handoff_mode: 'PRIVATE' | 'WORLD' | null;
+        country_code: string;
+        city: string | null;
+        latitude: number | null;
+        longitude: number | null;
+        location_precision: JourneyLocation['locationPrecision'];
       }
     >();
   if (!row) {
@@ -605,7 +627,12 @@ export async function getClaimImage(request: Request, claimId: string) {
   return { body: object.body, mimeType: claim.mime_type };
 }
 
-export async function submitRedraw(request: Request, claimId: string, imageDataUrl: string) {
+export async function submitRedraw(
+  request: Request,
+  claimId: string,
+  imageDataUrl: string,
+  location?: DrawingLocationInput | null,
+) {
   await ensureSchema();
   const claim = await authenticatedClaim(request, claimId);
   const now = Date.now();
@@ -633,9 +660,21 @@ export async function submitRedraw(request: Request, claimId: string, imageDataU
   const receiptToken = randomToken();
   const receiptHash = await hashToken(receiptToken);
   const storagePath = `journeys/${claim.journey_id}/${stepIndex}-${drawingId}.${image.extension}`;
-  const countryCode = countryFromRequest(request);
-  const completed = stepIndex >= claim.target_redraws;
-  const nextStatus: JourneyStatus = completed ? 'COMPLETED' : 'AWAITING_HANDOFF';
+  const drawingLocation = normalizeDrawingLocation(location, {
+    countryCode: claim.country_code,
+    city: claim.city,
+    latitude: claim.latitude,
+    longitude: claim.longitude,
+    locationPrecision: claim.location_precision,
+  });
+  const completed = claim.target_redraws >= 0 && stepIndex >= claim.target_redraws;
+  const autoForwarded = !completed && claim.handoff_mode === 'WORLD';
+  const nextStatus: JourneyStatus = completed
+    ? 'COMPLETED'
+    : autoForwarded
+      ? 'AVAILABLE_WORLD'
+      : 'AWAITING_HANDOFF';
+  const nextHandoffMode = autoForwarded ? 'WORLD' : null;
 
   await getFiles().put(storagePath, image.bytes, {
     httpMetadata: { contentType: image.mimeType },
@@ -649,9 +688,10 @@ export async function submitRedraw(request: Request, claimId: string, imageDataU
         .prepare(
           `INSERT INTO drawings (
             id, journey_id, step_index, storage_path, mime_type, width, height,
-            byte_size, sha256, country_code, created_at
+            byte_size, sha256, country_code, city, latitude, longitude,
+            location_precision, created_at
           )
-          SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+          SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
           WHERE EXISTS (
             SELECT 1 FROM claims c JOIN journeys j ON j.id = c.journey_id
             WHERE c.id = ? AND c.submitted_at IS NULL AND c.reservation_expires_at > ?
@@ -668,7 +708,11 @@ export async function submitRedraw(request: Request, claimId: string, imageDataU
           image.height,
           image.bytes.byteLength,
           image.sha256,
-          countryCode,
+          drawingLocation.countryCode,
+          drawingLocation.city,
+          drawingLocation.latitude,
+          drawingLocation.longitude,
+          drawingLocation.locationPrecision,
           now,
           claimId,
           now,
@@ -691,7 +735,7 @@ export async function submitRedraw(request: Request, claimId: string, imageDataU
           `UPDATE journeys
            SET redraw_count = ?, current_drawing_id = ?, status = ?, updated_at = ?,
                completed_at = ?, reservation_expires_at = NULL,
-               previous_available_state = NULL, handoff_mode = NULL
+               previous_available_state = NULL, handoff_mode = ?
            WHERE id = ? AND status = 'RESERVED'
              AND EXISTS (SELECT 1 FROM claims WHERE id = ? AND submitted_at = ?)`,
         )
@@ -701,6 +745,7 @@ export async function submitRedraw(request: Request, claimId: string, imageDataU
           nextStatus,
           now,
           completed ? now : null,
+          nextHandoffMode,
           claim.journey_id,
           claimId,
           now,
@@ -720,6 +765,7 @@ export async function submitRedraw(request: Request, claimId: string, imageDataU
     publicSlug: claim.public_slug,
     receiptToken,
     completed,
+    autoForwarded,
     redrawCount: stepIndex,
     targetRedraws: claim.target_redraws,
   };
@@ -785,13 +831,13 @@ export async function listPublicJourneys(options: {
     newest: 'j.created_at DESC',
     oldest: 'j.created_at ASC',
     progress:
-      'CAST(j.redraw_count AS REAL) / CASE WHEN j.target_redraws = 0 THEN 1 ELSE j.target_redraws END DESC, j.updated_at DESC',
+      'CAST(j.redraw_count AS REAL) / CASE WHEN j.target_redraws < 0 THEN j.redraw_count + 1 WHEN j.target_redraws = 0 THEN 1 ELSE j.target_redraws END DESC, j.updated_at DESC',
     votes: 'vote_count DESC, j.completed_at DESC, j.created_at DESC',
   };
 
   const rows = await getDatabase()
     .prepare(
-      `SELECT j.public_slug, j.status, j.target_redraws, j.redraw_count,
+      `SELECT j.id, j.public_slug, j.status, j.target_redraws, j.redraw_count,
               j.created_at, j.updated_at, j.completed_at, j.current_drawing_id,
               COUNT(v.id) AS vote_count
        FROM journeys j
@@ -804,6 +850,7 @@ export async function listPublicJourneys(options: {
     .bind(options.limit)
     .all<{
       public_slug: string;
+      id: string;
       status: JourneyStatus;
       target_redraws: number;
       redraw_count: number;
@@ -814,7 +861,55 @@ export async function listPublicJourneys(options: {
       vote_count: number;
     }>();
 
-  return rows.results.map((journey) => ({
+  if (rows.results.length === 0) return [];
+
+  const placeholders = rows.results.map(() => '?').join(', ');
+  const previewRows = await getDatabase()
+    .prepare(
+      `SELECT id, journey_id, step_index, country_code, city, latitude, longitude,
+              location_precision, created_at
+       FROM (
+         SELECT id, journey_id, step_index, country_code, city, latitude, longitude,
+                location_precision, created_at,
+                ROW_NUMBER() OVER (PARTITION BY journey_id ORDER BY step_index DESC) AS preview_rank
+         FROM drawings WHERE journey_id IN (${placeholders})
+       )
+       WHERE preview_rank <= 20 OR step_index = 0
+       ORDER BY journey_id, step_index ASC`,
+    )
+    .bind(...rows.results.map((journey) => journey.id))
+    .all<Pick<
+      DrawingRow,
+      | 'id'
+      | 'journey_id'
+      | 'step_index'
+      | 'country_code'
+      | 'city'
+      | 'latitude'
+      | 'longitude'
+      | 'location_precision'
+      | 'created_at'
+    >>();
+  const previewsByJourney = new Map<string, typeof previewRows.results>();
+  for (const drawing of previewRows.results) {
+    const current = previewsByJourney.get(drawing.journey_id) ?? [];
+    current.push(drawing);
+    previewsByJourney.set(drawing.journey_id, current);
+  }
+
+  return rows.results.map((journey) => {
+    const drawingPreviews = (previewsByJourney.get(journey.id) ?? []).map((drawing) => ({
+      id: drawing.id,
+      stepIndex: drawing.step_index,
+      countryCode: drawing.country_code,
+      city: drawing.city,
+      latitude: drawing.latitude,
+      longitude: drawing.longitude,
+      locationPrecision: drawing.location_precision,
+      createdAt: drawing.created_at,
+      imageUrl: `/api/public/journeys/${encodeURIComponent(journey.public_slug)}/drawings/${encodeURIComponent(drawing.id)}`,
+    }));
+    return {
     publicSlug: journey.public_slug,
     status: journey.status,
     targetRedraws: journey.target_redraws,
@@ -825,10 +920,12 @@ export async function listPublicJourneys(options: {
     completedAt: journey.completed_at,
     voteCount: Number(journey.vote_count),
     coverImageUrl:
-      journey.status === 'COMPLETED' && journey.current_drawing_id
+      journey.current_drawing_id
         ? `/api/public/journeys/${encodeURIComponent(journey.public_slug)}/drawings/${encodeURIComponent(journey.current_drawing_id)}`
         : null,
-  }));
+    drawingPreviews,
+    };
+  });
 }
 
 export async function voteForJourney(publicSlug: string, voterToken: string) {
@@ -837,7 +934,7 @@ export async function voteForJourney(publicSlug: string, voterToken: string) {
   const journey = await database
     .prepare(
       `SELECT id FROM journeys
-       WHERE public_slug = ? AND status = 'COMPLETED' AND flagged = 0`,
+       WHERE public_slug = ? AND status != 'EXPIRED' AND flagged = 0`,
     )
     .bind(publicSlug)
     .first<{ id: string }>();
@@ -884,27 +981,44 @@ export async function getPublicJourney(publicSlug: string) {
   if (!journey) {
     throw new HttpError(404, 'JOURNEY_NOT_FOUND', 'This Drawmory could not be found.');
   }
+  if (journey.flagged || journey.status === 'EXPIRED') {
+    throw new HttpError(404, 'JOURNEY_NOT_FOUND', 'This Drawmory could not be found.');
+  }
 
-  const drawings =
-    journey.status === 'COMPLETED'
-      ? (
-          await getDatabase()
-            .prepare(
-              `SELECT id, step_index, country_code, created_at, width, height
-               FROM drawings WHERE journey_id = ? ORDER BY step_index ASC`,
-            )
-            .bind(journey.id)
-            .all<Pick<DrawingRow, 'id' | 'step_index' | 'country_code' | 'created_at' | 'width' | 'height'>>()
-        ).results.map((drawing) => ({
+  const drawings = (
+    await getDatabase()
+      .prepare(
+        `SELECT id, step_index, country_code, city, latitude, longitude,
+                location_precision, created_at, width, height
+         FROM drawings WHERE journey_id = ? ORDER BY step_index ASC`,
+      )
+      .bind(journey.id)
+      .all<Pick<
+        DrawingRow,
+        | 'id'
+        | 'step_index'
+        | 'country_code'
+        | 'city'
+        | 'latitude'
+        | 'longitude'
+        | 'location_precision'
+        | 'created_at'
+        | 'width'
+        | 'height'
+      >>()
+  ).results.map((drawing) => ({
           id: drawing.id,
           stepIndex: drawing.step_index,
           countryCode: drawing.country_code,
+          city: drawing.city,
+          latitude: drawing.latitude,
+          longitude: drawing.longitude,
+          locationPrecision: drawing.location_precision,
           createdAt: drawing.created_at,
           width: drawing.width,
           height: drawing.height,
           imageUrl: `/api/public/journeys/${encodeURIComponent(publicSlug)}/drawings/${drawing.id}`,
-        }))
-      : [];
+        }));
 
   const countryCount = new Set(
     drawings.map((drawing) => drawing.countryCode).filter((country) => country !== 'UNKNOWN'),
@@ -933,7 +1047,7 @@ export async function getPublicDrawing(publicSlug: string, drawingId: string) {
   const drawing = await getDatabase()
     .prepare(
       `SELECT d.* FROM drawings d JOIN journeys j ON j.id = d.journey_id
-       WHERE j.public_slug = ? AND j.status = 'COMPLETED' AND d.id = ?`,
+       WHERE j.public_slug = ? AND j.status != 'EXPIRED' AND j.flagged = 0 AND d.id = ?`,
     )
     .bind(publicSlug, drawingId)
     .first<DrawingRow>();

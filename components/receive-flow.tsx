@@ -7,6 +7,7 @@ import { DocumentLink } from './document-link';
 import { useLanguage } from './language-provider';
 import { HandoffPreview, OfferPanel } from './offer-panel';
 import { SiteHeader } from './site-header';
+import { useClientReady } from '@/lib/client/hydration';
 
 type WorldOffer = {
   token: string;
@@ -24,6 +25,7 @@ export function ReceiveFlow() {
   const [busy, setBusy] = useState<'code' | 'world' | 'claim' | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [worldEmpty, setWorldEmpty] = useState(false);
+  const ready = useClientReady();
 
   const checkCode = async (event: FormEvent) => {
     event.preventDefault();
@@ -109,7 +111,7 @@ export function ReceiveFlow() {
                 maxLength={16}
                 data-testid="handoff-code"
               />
-              <button className="secondary-button dark-button" type="submit" disabled={busy === 'code'}>
+              <button className="secondary-button dark-button" type="submit" disabled={busy === 'code' || !ready}>
                 {busy === 'code' ? '…' : t('checkCode')}
               </button>
             </form>
@@ -119,7 +121,7 @@ export function ReceiveFlow() {
               <span className="world-orbit small-orbit" aria-hidden="true"><span /></span>
               <h2>{t('receiveWorld')}</h2>
               <p>{t('worldHint')}</p>
-              <button className="primary-button" type="button" onClick={receiveWorld} disabled={busy === 'world'}>
+              <button className="primary-button" type="button" onClick={receiveWorld} disabled={busy === 'world' || !ready} data-testid="receive-world">
                 {busy === 'world' ? '…' : t('receiveWorld')}
               </button>
             </section>

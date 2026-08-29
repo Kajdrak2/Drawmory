@@ -7,12 +7,15 @@ import { useLanguage } from './language-provider';
 import { apiFetch } from '@/lib/client/api';
 import { navigateTo } from '@/lib/client/document-navigation';
 import { saveReceipt } from '@/lib/client/receipts';
+import type { DrawingLocationInput } from '@/lib/location';
+import { LocationPicker } from './location-picker';
 
 type CreateResult = {
   journeyId: string;
   publicSlug: string;
   receiptToken: string;
   targetRedraws: number;
+  targetParticipants: number | 'infinite';
 };
 
 export function CreateFlow() {
@@ -20,7 +23,8 @@ export function CreateFlow() {
   const canvasRef = useRef<DrawingCanvasHandle>(null);
   const [step, setStep] = useState<'draw' | 'length'>('draw');
   const [imageDataUrl, setImageDataUrl] = useState<string | null>(null);
-  const [targetRedraws, setTargetRedraws] = useState<3 | 5>(3);
+  const [targetParticipants, setTargetParticipants] = useState<number | 'infinite'>(4);
+  const [location, setLocation] = useState<DrawingLocationInput>({});
   const [hasDrawing, setHasDrawing] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -43,7 +47,7 @@ export function CreateFlow() {
     try {
       const result = await apiFetch<CreateResult>('/api/journeys', {
         method: 'POST',
-        body: JSON.stringify({ imageDataUrl, targetRedraws }),
+        body: JSON.stringify({ imageDataUrl, targetParticipants, location }),
       });
       saveReceipt({
         token: result.receiptToken,
@@ -88,28 +92,54 @@ export function CreateFlow() {
           <div className="length-panel">
             <div className="length-options" role="radiogroup" aria-label={t('chooseLength')}>
               <button
-                className={`length-card${targetRedraws === 3 ? ' selected' : ''}`}
+                className={`length-card${targetParticipants === 4 ? ' selected' : ''}`}
                 type="button"
                 role="radio"
-                aria-checked={targetRedraws === 3}
-                onClick={() => setTargetRedraws(3)}
+                aria-checked={targetParticipants === 4}
+                onClick={() => setTargetParticipants(4)}
               >
-                <span className="length-number">3</span>
-                <strong>{t('threeRedraws')}</strong>
-                <small>{t('demo')}</small>
+                <span className="length-number">4</span>
+                <strong>{t('fourParticipants')}</strong>
+                <small>{t('shortLoop')}</small>
               </button>
               <button
-                className={`length-card${targetRedraws === 5 ? ' selected' : ''}`}
+                className={`length-card${targetParticipants === 8 ? ' selected' : ''}`}
                 type="button"
                 role="radio"
-                aria-checked={targetRedraws === 5}
-                onClick={() => setTargetRedraws(5)}
+                aria-checked={targetParticipants === 8}
+                onClick={() => setTargetParticipants(8)}
               >
-                <span className="length-number">5</span>
-                <strong>{t('fiveRedraws')}</strong>
-                <small>{t('shortJourney')}</small>
+                <span className="length-number">8</span>
+                <strong>{t('eightParticipants')}</strong>
+                <small>{t('longerLoop')}</small>
+              </button>
+              <button
+                className={`length-card infinite-card${targetParticipants === 'infinite' ? ' selected' : ''}`}
+                type="button"
+                role="radio"
+                aria-checked={targetParticipants === 'infinite'}
+                onClick={() => setTargetParticipants('infinite')}
+              >
+                <span className="length-number">∞</span>
+                <strong>{t('infiniteParticipants')}</strong>
+                <small>{t('infiniteHint')}</small>
               </button>
             </div>
+            <label className="custom-participant-field">
+              <span>{t('customParticipants')}</span>
+              <input
+                type="number"
+                min="2"
+                max="50"
+                value={typeof targetParticipants === 'number' ? targetParticipants : ''}
+                placeholder="2–50"
+                onChange={(event) => {
+                  const next = Number(event.target.value);
+                  if (Number.isInteger(next) && next >= 2 && next <= 50) setTargetParticipants(next);
+                }}
+              />
+            </label>
+            <LocationPicker value={location} onChange={setLocation} />
             <div className="flow-actions split-actions">
               <button className="secondary-button" type="button" onClick={() => setStep('draw')}>
                 ←

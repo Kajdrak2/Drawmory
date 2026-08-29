@@ -133,6 +133,7 @@ export function PassFlow({ journeyId }: { journeyId: string }) {
               type="button"
               onClick={() => choose('WORLD')}
               disabled={Boolean(busy)}
+              data-testid="world-handoff"
             >
               <span className="handoff-symbol world-symbol" aria-hidden="true">◎</span>
               <strong>{busy === 'WORLD' ? '…' : t('world')}</strong>
@@ -161,6 +162,7 @@ export function PassFlow({ journeyId }: { journeyId: string }) {
             <span className="world-orbit" aria-hidden="true"><span /></span>
             <strong>{t('waiting')}</strong>
             <p>{t('worldHint')}</p>
+            <small>{t('worldLocked')}</small>
           </div>
         )}
 
