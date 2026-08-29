@@ -2,7 +2,18 @@
 
 **See it. Remember it. Redraw it. Pass it on.**
 
-Drawmory is a mobile-first drawing journey with no account, sign-up, login, email, profile, or product AI. One person draws, the next sees that drawing once, redraws it from memory, and passes the new version onward. When the configured 3 or 5 redraws are complete, the full transformation is revealed.
+[Drawmory](https://drawmory.xyz) is an anonymous, mobile-first drawing-memory game. One person draws, the next sees that drawing once, redraws it from memory, and passes the new version onward. Every step becomes part of a public visual story that can travel around the world.
+
+## What you can do
+
+- Draw with a brush, marker, fill tool, eraser, lines, rectangles and ellipses, with a full color picker, opacity, size, undo and redo.
+- Choose a fixed group size or let the loop continue indefinitely.
+- Pass a private link or send the Drawmory to the world queue. Once world mode is chosen, every following drawing automatically returns to the world.
+- Explore ongoing and completed Drawmories from the home gallery, move through their drawings, and vote once per browser.
+- See each Drawmory as a slide story, a fresco, and—when contributors opt in—a route on a world map.
+- Add an optional country, city, or precise position to a contribution. Nothing is requested by default.
+
+No account, sign-up, login, email or profile is required.
 
 ## Run locally
 
@@ -24,8 +35,7 @@ Open `http://localhost:3000`. Local D1 and R2 emulation is configured automatica
 - `/carry/[claimId]` — one-time observation and redraw
 - `/pass/[journeyId]` — private QR/code or world handoff
 - `/receipt/[receiptToken]` — private contribution receipt
-- `/journey/[publicSlug]` — progress, then final reveal
-- `/memories` — receipt links stored only on the current device
+- `/journey/[publicSlug]` — public slides, fresco, map, progress and voting
 
 ## Data and security
 
@@ -35,8 +45,9 @@ Open `http://localhost:3000`. Local D1 and R2 emulation is configured automatica
 - Carrier sessions use an `HttpOnly`, `SameSite=Lax`, short-lived cookie.
 - Image MIME type, signature, byte size, dimensions, and square aspect ratio are validated server-side.
 - A conditional atomic claim permits exactly one carrier; expired reservations return to their prior private or world state.
-- Public journey pages never expose drawings before completion.
-- No raw IP address, precise location, identity, account, or email is stored. Only an approximate two-letter country code is accepted when the host provides one.
+- Public journey pages expose the drawing sequence but never private handoff or receipt capabilities.
+- A browser voter token prevents repeated votes from the same browser and is stored only as a hash on the server.
+- No raw IP address, identity, account or email is stored. Location is optional and contributor-provided; it may be a country, city or precise coordinates.
 
 ## Configuration
 
@@ -51,8 +62,8 @@ npm run build
 npm run test:e2e
 ```
 
-The Playwright test uses fresh browser contexts to simulate separate anonymous phones and completes a 3-redraw journey through the four-frame reveal.
+The Playwright suite uses fresh browser contexts to simulate separate anonymous phones. It covers navigation, drawing tools, open loops, private passing, world-mode continuity, public previews, location inheritance and one-vote-per-browser behavior.
 
 ## Honest MVP boundary
 
-The world queue includes a report-and-skip action and no public gallery, but a public launch still needs an operational moderation policy, abuse monitoring, retention rules, and a production privacy/legal review. No claim is made that screenshots can be prevented during the one-time observation.
+The world queue includes a report-and-skip action, but a larger public launch still needs operational moderation, abuse monitoring, retention rules and a production privacy/legal review. No claim is made that screenshots can be prevented during the one-time observation.
