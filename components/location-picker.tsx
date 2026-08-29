@@ -9,10 +9,12 @@ export function LocationPicker({
   value,
   onChange,
   inheritsPrevious = false,
+  cityRequiresCountry = false,
 }: {
   value: DrawingLocationInput;
   onChange: (location: DrawingLocationInput) => void;
   inheritsPrevious?: boolean;
+  cityRequiresCountry?: boolean;
 }) {
   const { language, t } = useLanguage();
   const fieldId = useId();
@@ -75,7 +77,14 @@ export function LocationPicker({
           <select
             id={`${fieldId}-country`}
             value={value.countryCode ?? ''}
-            onChange={(event) => onChange({ ...value, countryCode: event.target.value || null })}
+            onChange={(event) => {
+              const countryCode = event.target.value || null;
+              onChange({
+                ...value,
+                countryCode,
+                city: cityRequiresCountry && !countryCode ? null : value.city,
+              });
+            }}
           >
             <option value="">{t('notSpecified')}</option>
             {options.map((country) => (
@@ -91,8 +100,10 @@ export function LocationPicker({
             value={value.city ?? ''}
             maxLength={80}
             placeholder={t('cityPlaceholder')}
+            disabled={cityRequiresCountry && !value.countryCode}
             onChange={(event) => onChange({ ...value, city: event.target.value })}
           />
+          {cityRequiresCountry && !value.countryCode ? <small>{t('chooseCountryFirst')}</small> : null}
         </div>
       </div>
       <div className="location-actions">

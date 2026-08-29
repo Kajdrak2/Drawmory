@@ -53,7 +53,21 @@ const schemaStatements = [
     reveal_started_at INTEGER,
     reservation_expires_at INTEGER NOT NULL,
     submitted_at INTEGER,
+    cancelled_at INTEGER,
+    cancel_reason TEXT,
     created_at INTEGER NOT NULL
+  )`,
+  `CREATE TABLE IF NOT EXISTS claim_drafts (
+    claim_id TEXT PRIMARY KEY,
+    journey_id TEXT NOT NULL,
+    drawing_id TEXT NOT NULL,
+    storage_path TEXT NOT NULL,
+    mime_type TEXT NOT NULL,
+    width INTEGER NOT NULL,
+    height INTEGER NOT NULL,
+    byte_size INTEGER NOT NULL,
+    sha256 TEXT NOT NULL,
+    validated_at INTEGER NOT NULL
   )`,
   `CREATE TABLE IF NOT EXISTS receipts (
     id TEXT PRIMARY KEY,
@@ -73,6 +87,7 @@ const schemaStatements = [
   `CREATE UNIQUE INDEX IF NOT EXISTS idx_drawings_journey_step ON drawings(journey_id, step_index)`,
   `CREATE INDEX IF NOT EXISTS idx_handoffs_journey_status ON handoffs(journey_id, status)`,
   `CREATE INDEX IF NOT EXISTS idx_claims_journey ON claims(journey_id, created_at)`,
+  `CREATE INDEX IF NOT EXISTS idx_claim_drafts_journey ON claim_drafts(journey_id)`,
   `CREATE INDEX IF NOT EXISTS idx_receipts_journey_step ON receipts(journey_id, step_index)`,
   `CREATE UNIQUE INDEX IF NOT EXISTS idx_journey_votes_journey_voter ON journey_votes(journey_id, voter_hash)`,
   `CREATE INDEX IF NOT EXISTS idx_journey_votes_journey ON journey_votes(journey_id)`,
@@ -84,6 +99,11 @@ const drawingLocationMigrations = [
   `ALTER TABLE drawings ADD COLUMN latitude REAL`,
   `ALTER TABLE drawings ADD COLUMN longitude REAL`,
   `ALTER TABLE drawings ADD COLUMN location_precision TEXT NOT NULL DEFAULT 'NONE'`,
+];
+
+const claimLifecycleMigrations = [
+  `ALTER TABLE claims ADD COLUMN cancelled_at INTEGER`,
+  `ALTER TABLE claims ADD COLUMN cancel_reason TEXT`,
 ];
 
 let schemaReady: Promise<void> | undefined;
@@ -106,7 +126,7 @@ export async function ensureSchema() {
   schemaReady ??= getDatabase()
     .batch(schemaStatements.map((statement) => getDatabase().prepare(statement)))
     .then(async () => {
-      for (const statement of drawingLocationMigrations) {
+      for (const statement of [...drawingLocationMigrations, ...claimLifecycleMigrations]) {
         try {
           await getDatabase().prepare(statement).run();
         } catch (error) {

@@ -12,4 +12,8 @@ export const drawingLocationSchema = z
       (location.latitude == null && location.longitude == null) ||
       (location.latitude != null && location.longitude != null),
     { message: 'Latitude and longitude must be provided together.' },
+  )
+  .refine(
+    (location) => !location.city?.trim() || Boolean(location.countryCode?.trim()),
+    { message: 'Choose a country before adding a city.' },
   );

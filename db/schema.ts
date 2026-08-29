@@ -78,12 +78,31 @@ export const claims = sqliteTable(
     revealStartedAt: integer('reveal_started_at'),
     reservationExpiresAt: integer('reservation_expires_at').notNull(),
     submittedAt: integer('submitted_at'),
+    cancelledAt: integer('cancelled_at'),
+    cancelReason: text('cancel_reason'),
     createdAt: integer('created_at').notNull(),
   },
   (table) => [
     uniqueIndex('idx_claims_session_hash').on(table.sessionTokenHash),
     index('idx_claims_journey').on(table.journeyId, table.createdAt),
   ],
+);
+
+export const claimDrafts = sqliteTable(
+  'claim_drafts',
+  {
+    claimId: text('claim_id').primaryKey(),
+    journeyId: text('journey_id').notNull(),
+    drawingId: text('drawing_id').notNull(),
+    storagePath: text('storage_path').notNull(),
+    mimeType: text('mime_type').notNull(),
+    width: integer('width').notNull(),
+    height: integer('height').notNull(),
+    byteSize: integer('byte_size').notNull(),
+    sha256: text('sha256').notNull(),
+    validatedAt: integer('validated_at').notNull(),
+  },
+  (table) => [index('idx_claim_drafts_journey').on(table.journeyId)],
 );
 
 export const receipts = sqliteTable(

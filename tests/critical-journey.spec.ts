@@ -115,6 +115,8 @@ test('a drawing travels through three anonymous carriers and reveals four frames
 
     await addStroke(nextPage);
     await nextPage.getByTestId('submit-redraw').click();
+    await expect(nextPage.getByTestId('location-step')).toBeVisible();
+    await nextPage.getByTestId('skip-location').click();
 
     if (step < 3) {
       await expect(nextPage).toHaveURL(/\/pass\//);
@@ -183,6 +185,9 @@ test('a world journey keeps travelling automatically, stays public, inherits loc
   await expect(firstCarrier.getByTestId('drawing-canvas')).toBeVisible({ timeout: 15_000 });
   await addStroke(firstCarrier);
   await firstCarrier.getByTestId('submit-redraw').click();
+  await expect(firstCarrier.getByTestId('location-step')).toBeVisible();
+  await expect(firstCarrier.getByRole('textbox', { name: 'City', exact: true })).toBeDisabled();
+  await firstCarrier.getByTestId('skip-location').click();
   await expect(firstCarrier).toHaveURL(/\/receipt\//);
   await expect(firstCarrier.getByText(/returned to the world automatically/i)).toBeVisible();
 
@@ -226,16 +231,143 @@ test('a world journey keeps travelling automatically, stays public, inherits loc
   await expect(finalCarrier.getByTestId('drawing-canvas')).toBeVisible({ timeout: 15_000 });
   await addStroke(finalCarrier);
   await finalCarrier.getByTestId('submit-redraw').click();
+  await expect(finalCarrier.getByTestId('location-step')).toBeVisible();
+  await finalCarrier.getByLabel('Country', { exact: true }).selectOption('ES');
+  await finalCarrier.getByRole('textbox', { name: 'City', exact: true }).fill('Madrid');
+  await finalCarrier.getByTestId('save-location').click();
   await expect(finalCarrier).toHaveURL(new RegExp(`/journey/${publicSlug}$`));
   await expect(finalCarrier.locator('.timeline-strip button')).toHaveCount(3);
 
   const completedResponse = await finalCarrier.request.get(`/api/public/journeys/${publicSlug}`);
-  const completed = await completedResponse.json() as { status: string; drawings: Array<{ city: string | null }> };
+  const completed = await completedResponse.json() as {
+    status: string;
+    drawings: Array<{ countryCode: string; city: string | null }>;
+  };
   expect(completed.status).toBe('COMPLETED');
   expect(completed.drawings).toHaveLength(3);
-  expect(completed.drawings.every((drawing) => drawing.city === 'Paris')).toBeTruthy();
+  expect(completed.drawings.slice(0, 2).every((drawing) => drawing.city === 'Paris')).toBeTruthy();
+  expect(completed.drawings[2]).toMatchObject({ countryCode: 'ES', city: 'Madrid' });
 
   await creatorContext.close();
   await firstCarrierContext.close();
   await finalCarrierContext.close();
+});
+
+test('ten-minute drawing logic opens a confirmation window, then releases the same step', async ({
+  browser,
+}) => {
+  const creatorContext = await browser.newContext({ viewport: { width: 390, height: 844 } });
+  const creator = await creatorContext.newPage();
+  await creator.goto('/create');
+  await addStroke(creator);
+  await creator.getByRole('button', { name: /Continue/i }).click();
+  await creator.getByLabel('Custom number of participants').fill('2');
+  await creator.getByTestId('launch-journey').click();
+  await creator.getByTestId('private-handoff').click();
+  const handoffUrl = await creator.locator('.secret-link').innerText();
+
+  const carrierContext = await browser.newContext({ viewport: { width: 390, height: 844 } });
+  const carrier = await carrierContext.newPage();
+  await carrier.goto(handoffUrl);
+  await carrier.getByTestId('carry-it').click();
+  await carrier.getByTestId('start-reveal').click();
+  await expect(carrier.getByTestId('drawing-canvas')).toBeVisible({ timeout: 15_000 });
+  await addStroke(carrier);
+
+  const confirmation = carrier.getByTestId('validation-timeout');
+  await expect(confirmation).toBeVisible({ timeout: 10_000 });
+  await expect(confirmation.getByTestId('confirm-redraw')).toBeVisible();
+  await expect(carrier.getByTestId('claim-expired')).toBeVisible({ timeout: 6_000 });
+
+  const retryContext = await browser.newContext({ viewport: { width: 390, height: 844 } });
+  const retry = await retryContext.newPage();
+  await retry.goto(handoffUrl);
+  await expect(retry.getByTestId('carry-it')).toBeVisible({ timeout: 10_000 });
+  await retry.getByTestId('carry-it').click();
+  await retry.getByTestId('start-reveal').click();
+  await expect(retry.getByTestId('drawing-canvas')).toBeVisible({ timeout: 15_000 });
+  await addStroke(retry);
+  await expect(retry.getByTestId('validation-timeout')).toBeVisible({ timeout: 10_000 });
+  await retry.getByTestId('confirm-redraw').click();
+  await expect(retry.getByTestId('location-step')).toBeVisible();
+  await retry.getByTestId('skip-location').click();
+  await expect(retry).toHaveURL(/\/journey\//);
+
+  await creatorContext.close();
+  await carrierContext.close();
+  await retryContext.close();
+});
+
+test('the secret owner page can reset a drawing and permanently delete a Drawmory', async ({
+  browser,
+  request,
+}) => {
+  const invalidSession = await request.post('/api/admin/session', {
+    data: { capability: 'wrong-capability-that-is-long-enough-0123456789' },
+  });
+  expect(invalidSession.status()).toBe(401);
+
+  const creatorContext = await browser.newContext({ viewport: { width: 390, height: 844 } });
+  const creator = await creatorContext.newPage();
+  await creator.goto('/create');
+  await addStroke(creator);
+  await creator.getByRole('button', { name: /Continue/i }).click();
+  await creator.getByLabel('Custom number of participants').fill('2');
+  await creator.getByTestId('launch-journey').click();
+  await creator.getByTestId('private-handoff').click();
+  const handoffUrl = await creator.locator('.secret-link').innerText();
+  const publicSlug = await creator.evaluate(() => {
+    const receipts = JSON.parse(localStorage.getItem('drawmoryReceipts') ?? '[]') as Array<{ publicSlug?: string }>;
+    return receipts[0]?.publicSlug ?? '';
+  });
+  expect(publicSlug).not.toBe('');
+
+  const carrierContext = await browser.newContext({ viewport: { width: 390, height: 844 } });
+  const carrier = await carrierContext.newPage();
+  await carrier.goto(handoffUrl);
+  await carrier.getByTestId('carry-it').click();
+
+  const adminContext = await browser.newContext({ viewport: { width: 1180, height: 900 } });
+  const admin = await adminContext.newPage();
+  await admin.goto('/manage#access=test-admin-capability-0123456789abcdef-0123456789abcdef');
+  await expect(admin).toHaveURL(/\/manage$/);
+  await expect(admin.getByRole('heading', { name: 'Administration' })).toBeVisible();
+  const card = admin.getByTestId(`admin-journey-${publicSlug}`);
+  await expect(card).toBeVisible();
+  admin.once('dialog', (dialog) => dialog.accept());
+  await card.getByTestId(`admin-release-${publicSlug}`).click();
+  await expect(card.getByText('Disponible en privé')).toBeVisible();
+
+  await carrier.goto(handoffUrl);
+  await carrier.getByTestId('carry-it').click();
+  await carrier.getByTestId('start-reveal').click();
+  await expect(carrier.getByTestId('drawing-canvas')).toBeVisible({ timeout: 15_000 });
+  await addStroke(carrier);
+  await carrier.getByTestId('submit-redraw').click();
+  await expect(carrier.getByTestId('location-step')).toBeVisible();
+  await carrier.getByTestId('skip-location').click();
+  await expect(carrier).toHaveURL(/\/journey\//);
+  await admin.getByRole('button', { name: 'Actualiser' }).click();
+  await expect(card.locator('.admin-drawings figure')).toHaveCount(2);
+
+  admin.once('dialog', (dialog) => dialog.accept());
+  await card.getByTestId(`admin-reset-${publicSlug}-1`).click();
+  await expect(card.locator('.admin-drawings figure')).toHaveCount(1);
+  await expect(admin.getByText(/Nouveau lien de transmission privé/)).toBeVisible();
+
+  const resetResponse = await admin.request.get(`/api/public/journeys/${publicSlug}`);
+  expect(resetResponse.ok()).toBeTruthy();
+  const resetJourney = await resetResponse.json() as { status: string; drawings: unknown[] };
+  expect(resetJourney.status).toBe('AWAITING_HANDOFF');
+  expect(resetJourney.drawings).toHaveLength(1);
+
+  admin.once('dialog', (dialog) => dialog.accept(publicSlug));
+  await card.getByTestId(`admin-delete-${publicSlug}`).click();
+  await expect(admin.getByTestId(`admin-journey-${publicSlug}`)).toHaveCount(0);
+  const deletedResponse = await admin.request.get(`/api/public/journeys/${publicSlug}`);
+  expect(deletedResponse.status()).toBe(404);
+
+  await creatorContext.close();
+  await carrierContext.close();
+  await adminContext.close();
 });

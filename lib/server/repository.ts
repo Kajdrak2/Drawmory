@@ -49,6 +49,8 @@ type ClaimRow = {
   reveal_started_at: number | null;
   reservation_expires_at: number;
   submitted_at: number | null;
+  cancelled_at: number | null;
+  cancel_reason: string | null;
   created_at: number;
 };
 
@@ -87,6 +89,34 @@ function changes(result: D1Result<unknown>) {
   return Number(result.meta?.changes ?? 0);
 }
 
+function claimDeadlines(claim: Pick<ClaimRow, 'reveal_started_at' | 'reservation_expires_at'>) {
+  if (!claim.reveal_started_at) {
+    return {
+      observationEndsAt: null,
+      drawingExpiresAt: null,
+      confirmationExpiresAt: null,
+    };
+  }
+  const observationEndsAt = claim.reveal_started_at + SERVER_CONFIG.revealSeconds * 1000;
+  const drawingExpiresAt = observationEndsAt + SERVER_CONFIG.redrawSeconds * 1000;
+  return {
+    observationEndsAt,
+    drawingExpiresAt,
+    confirmationExpiresAt: drawingExpiresAt + SERVER_CONFIG.confirmationSeconds * 1000,
+  };
+}
+
+async function deleteDraftObjectIfCancelled(claimId: string, storagePath: string | null) {
+  if (!storagePath) return;
+  const claim = await getDatabase()
+    .prepare(`SELECT cancelled_at, submitted_at FROM claims WHERE id = ?`)
+    .bind(claimId)
+    .first<Pick<ClaimRow, 'cancelled_at' | 'submitted_at'>>();
+  if (claim?.cancelled_at && !claim.submitted_at) {
+    await getFiles().delete(storagePath);
+  }
+}
+
 async function releaseExpiredJourney(journeyId: string) {
   const database = getDatabase();
   const now = Date.now();
@@ -111,7 +141,17 @@ async function releaseExpiredJourney(journeyId: string) {
     journey.previous_available_state === 'AVAILABLE_PRIVATE'
       ? 'AVAILABLE_PRIVATE'
       : 'AVAILABLE_WORLD';
-  await database.batch([
+  const activeClaim = await database
+    .prepare(
+      `SELECT c.id, c.handoff_id, d.storage_path
+       FROM claims c LEFT JOIN claim_drafts d ON d.claim_id = c.id
+       WHERE c.journey_id = ? AND c.submitted_at IS NULL AND c.cancelled_at IS NULL
+       ORDER BY c.created_at DESC LIMIT 1`,
+    )
+    .bind(journeyId)
+    .first<{ id: string; handoff_id: string; storage_path: string | null }>();
+
+  const results = await database.batch([
     database
       .prepare(
         `UPDATE journeys
@@ -121,13 +161,31 @@ async function releaseExpiredJourney(journeyId: string) {
       .bind(restored, now, journeyId, now),
     database
       .prepare(
-        `UPDATE handoffs SET status = 'READY', claimed_at = NULL
-         WHERE id = (
-           SELECT handoff_id FROM claims WHERE journey_id = ? ORDER BY created_at DESC LIMIT 1
-         ) AND mode = 'PRIVATE'`,
+        `UPDATE claims SET cancelled_at = ?, cancel_reason = 'TIMEOUT'
+         WHERE id = ? AND submitted_at IS NULL AND cancelled_at IS NULL
+           AND reservation_expires_at <= ?`,
       )
-      .bind(journeyId),
+      .bind(now, activeClaim?.id ?? '', now),
+    database
+      .prepare(
+        `UPDATE handoffs
+         SET status = CASE WHEN mode = 'PRIVATE' THEN 'READY' ELSE 'CANCELLED' END,
+             claimed_at = CASE WHEN mode = 'PRIVATE' THEN NULL ELSE claimed_at END
+         WHERE id = ?
+           AND EXISTS (SELECT 1 FROM claims WHERE id = ? AND cancelled_at = ?)` ,
+      )
+      .bind(activeClaim?.handoff_id ?? '', activeClaim?.id ?? '', now),
+    database
+      .prepare(
+        `DELETE FROM claim_drafts WHERE claim_id = ?
+         AND EXISTS (SELECT 1 FROM claims WHERE id = ? AND cancelled_at = ?)` ,
+      )
+      .bind(activeClaim?.id ?? '', activeClaim?.id ?? '', now),
   ]);
+  if (changes(results[0]) !== 1) return false;
+  if (activeClaim) {
+    await deleteDraftObjectIfCancelled(activeClaim.id, activeClaim.storage_path);
+  }
   return true;
 }
 
@@ -453,9 +511,9 @@ export async function claimHandoff(secret: { token?: string; code?: string }) {
       .prepare(
         `INSERT INTO claims (
           id, journey_id, handoff_id, session_token_hash, reveal_started_at,
-          reservation_expires_at, submitted_at, created_at
+          reservation_expires_at, submitted_at, cancelled_at, cancel_reason, created_at
         )
-        SELECT ?, j.id, h.id, ?, NULL, ?, NULL, ?
+        SELECT ?, j.id, h.id, ?, NULL, ?, NULL, NULL, NULL, ?
         FROM journeys j JOIN handoffs h ON h.journey_id = j.id
         WHERE j.id = ? AND h.id = ? AND j.status = ? AND j.flagged = 0
           AND h.status = 'READY' AND (h.expires_at IS NULL OR h.expires_at > ?)`,
@@ -495,12 +553,18 @@ export async function claimHandoff(secret: { token?: string; code?: string }) {
     reservationExpiresAt,
     revealSeconds: SERVER_CONFIG.revealSeconds,
     redrawSeconds: SERVER_CONFIG.redrawSeconds,
+    confirmationSeconds: SERVER_CONFIG.confirmationSeconds,
   };
 }
 
 export function claimCookie(claimId: string, sessionToken: string) {
   const secure = process.env.NODE_ENV === 'production' ? '; Secure' : '';
-  return `dm_claim=${claimId}.${sessionToken}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${SERVER_CONFIG.claimSeconds}${secure}`;
+  const maxAge = Math.max(
+    SERVER_CONFIG.claimSeconds,
+    SERVER_CONFIG.revealSeconds + SERVER_CONFIG.redrawSeconds +
+      SERVER_CONFIG.confirmationSeconds + SERVER_CONFIG.locationSeconds,
+  ) + 60;
+  return `dm_claim=${claimId}.${sessionToken}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAge}${secure}`;
 }
 
 function readClaimCookie(request: Request, claimId: string) {
@@ -529,9 +593,14 @@ async function authenticatedClaim(request: Request, claimId: string) {
       `SELECT c.*, j.public_slug, j.status AS journey_status, j.target_redraws,
               j.redraw_count, j.current_drawing_id, j.reservation_expires_at AS journey_expires_at,
               j.handoff_mode, d.storage_path, d.mime_type, d.country_code, d.city,
-              d.latitude, d.longitude, d.location_precision
+              d.latitude, d.longitude, d.location_precision,
+              cd.drawing_id AS draft_drawing_id, cd.storage_path AS draft_storage_path,
+              cd.mime_type AS draft_mime_type, cd.width AS draft_width,
+              cd.height AS draft_height, cd.byte_size AS draft_byte_size,
+              cd.sha256 AS draft_sha256, cd.validated_at AS draft_validated_at
        FROM claims c JOIN journeys j ON j.id = c.journey_id
        JOIN drawings d ON d.id = j.current_drawing_id
+       LEFT JOIN claim_drafts cd ON cd.claim_id = c.id
        WHERE c.id = ? AND c.session_token_hash = ?`,
     )
     .bind(claimId, tokenHash)
@@ -551,6 +620,14 @@ async function authenticatedClaim(request: Request, claimId: string) {
         latitude: number | null;
         longitude: number | null;
         location_precision: JourneyLocation['locationPrecision'];
+        draft_drawing_id: string | null;
+        draft_storage_path: string | null;
+        draft_mime_type: 'image/png' | 'image/webp' | null;
+        draft_width: number | null;
+        draft_height: number | null;
+        draft_byte_size: number | null;
+        draft_sha256: string | null;
+        draft_validated_at: number | null;
       }
     >();
   if (!row) {
@@ -559,25 +636,34 @@ async function authenticatedClaim(request: Request, claimId: string) {
   return row;
 }
 
-function phaseForClaim(claim: ClaimRow) {
+function phaseForClaim(claim: ClaimRow & { journey_status?: JourneyStatus; draft_drawing_id?: string | null }) {
   const now = Date.now();
   if (claim.submitted_at) return 'submitted' as const;
+  if (claim.cancelled_at || (claim.journey_status && claim.journey_status !== 'RESERVED')) {
+    return 'expired' as const;
+  }
   if (claim.reservation_expires_at <= now) return 'expired' as const;
+  if (claim.draft_drawing_id) return 'location' as const;
   if (!claim.reveal_started_at) return 'ready' as const;
-  if (claim.reveal_started_at + SERVER_CONFIG.revealSeconds * 1000 > now) {
+  const deadlines = claimDeadlines(claim);
+  if ((deadlines.observationEndsAt ?? 0) > now) {
     return 'observing' as const;
   }
-  return 'drawing' as const;
+  if ((deadlines.drawingExpiresAt ?? 0) > now) return 'drawing' as const;
+  if ((deadlines.confirmationExpiresAt ?? 0) > now) return 'confirming' as const;
+  return 'expired' as const;
 }
 
 export async function getClaimState(request: Request, claimId: string) {
   await ensureSchema();
   let claim = await authenticatedClaim(request, claimId);
-  if (claim.reservation_expires_at <= Date.now() && !claim.submitted_at) {
+  const preliminaryPhase = phaseForClaim(claim);
+  if (preliminaryPhase === 'expired' && !claim.submitted_at && !claim.cancelled_at) {
     await releaseExpiredJourney(claim.journey_id);
     claim = await authenticatedClaim(request, claimId);
   }
   const phase = phaseForClaim(claim);
+  const deadlines = claimDeadlines(claim);
   return {
     claimId: claim.id,
     journeyId: claim.journey_id,
@@ -588,7 +674,11 @@ export async function getClaimState(request: Request, claimId: string) {
     revealStartedAt: claim.reveal_started_at,
     revealSeconds: SERVER_CONFIG.revealSeconds,
     redrawSeconds: SERVER_CONFIG.redrawSeconds,
+    confirmationSeconds: SERVER_CONFIG.confirmationSeconds,
     reservationExpiresAt: claim.reservation_expires_at,
+    observationEndsAt: deadlines.observationEndsAt,
+    drawingExpiresAt: deadlines.drawingExpiresAt,
+    confirmationExpiresAt: deadlines.confirmationExpiresAt,
     imageUrl: phase === 'observing' ? `/api/claims/${claim.id}/image` : null,
   };
 }
@@ -600,17 +690,36 @@ export async function startReveal(request: Request, claimId: string) {
   if (claim.submitted_at) {
     throw new HttpError(409, 'ALREADY_SUBMITTED', 'This contribution was already submitted.');
   }
+  if (claim.cancelled_at || claim.journey_status !== 'RESERVED') {
+    throw new HttpError(410, 'RESERVATION_EXPIRED', 'Your temporary reservation expired.');
+  }
   if (claim.reservation_expires_at <= now) {
     await releaseExpiredJourney(claim.journey_id);
     throw new HttpError(410, 'RESERVATION_EXPIRED', 'Your temporary reservation expired.');
   }
-  await getDatabase()
-    .prepare(
-      `UPDATE claims SET reveal_started_at = COALESCE(reveal_started_at, ?)
-       WHERE id = ? AND submitted_at IS NULL AND reservation_expires_at > ?`,
-    )
-    .bind(now, claimId, now)
-    .run();
+  const lifecycleExpiresAt = now + (
+    SERVER_CONFIG.revealSeconds + SERVER_CONFIG.redrawSeconds + SERVER_CONFIG.confirmationSeconds
+  ) * 1000;
+  await getDatabase().batch([
+    getDatabase()
+      .prepare(
+        `UPDATE claims
+         SET reveal_started_at = ?, reservation_expires_at = ?
+         WHERE id = ? AND reveal_started_at IS NULL AND submitted_at IS NULL
+           AND cancelled_at IS NULL AND reservation_expires_at > ?`,
+      )
+      .bind(now, lifecycleExpiresAt, claimId, now),
+    getDatabase()
+      .prepare(
+        `UPDATE journeys
+         SET reservation_expires_at = (
+           SELECT reservation_expires_at FROM claims WHERE id = ?
+         ), updated_at = ?
+         WHERE id = ? AND status = 'RESERVED'
+           AND EXISTS (SELECT 1 FROM claims WHERE id = ? AND reveal_started_at IS NOT NULL)`,
+      )
+      .bind(claimId, now, claim.journey_id, claimId),
+  ]);
   return getClaimState(request, claimId);
 }
 
@@ -627,10 +736,120 @@ export async function getClaimImage(request: Request, claimId: string) {
   return { body: object.body, mimeType: claim.mime_type };
 }
 
-export async function submitRedraw(
+export async function validateClaimDrawing(
   request: Request,
   claimId: string,
   imageDataUrl: string,
+) {
+  await ensureSchema();
+  const claim = await authenticatedClaim(request, claimId);
+  const now = Date.now();
+  if (claim.submitted_at) {
+    throw new HttpError(409, 'ALREADY_SUBMITTED', 'This contribution was already submitted.');
+  }
+  if (claim.draft_drawing_id) {
+    return getClaimState(request, claimId);
+  }
+  if (claim.cancelled_at || claim.journey_status !== 'RESERVED') {
+    throw new HttpError(410, 'RESERVATION_EXPIRED', 'Your temporary reservation expired.');
+  }
+  const deadlines = claimDeadlines(claim);
+  if (claim.reservation_expires_at <= now || (deadlines.confirmationExpiresAt ?? 0) <= now) {
+    await releaseExpiredJourney(claim.journey_id);
+    throw new HttpError(410, 'RESERVATION_EXPIRED', 'Your temporary reservation expired.');
+  }
+  if (!claim.reveal_started_at) {
+    throw new HttpError(409, 'REVEAL_NOT_STARTED', 'View the drawing before redrawing it.');
+  }
+  if ((deadlines.observationEndsAt ?? 0) > now) {
+    throw new HttpError(409, 'REVEAL_IN_PROGRESS', 'Wait until the observation ends before submitting.');
+  }
+
+  const image = await validateDataImage(imageDataUrl);
+  const stepIndex = claim.redraw_count + 1;
+  const drawingId = randomId('drw');
+  const storagePath = `journeys/${claim.journey_id}/${stepIndex}-${drawingId}.${image.extension}`;
+  const locationExpiresAt = now + SERVER_CONFIG.locationSeconds * 1000;
+
+  await getFiles().put(storagePath, image.bytes, {
+    httpMetadata: { contentType: image.mimeType },
+    customMetadata: { sha256: image.sha256 },
+  });
+
+  try {
+    const database = getDatabase();
+    const results = await database.batch([
+      database
+        .prepare(
+          `INSERT OR IGNORE INTO claim_drafts (
+            claim_id, journey_id, drawing_id, storage_path, mime_type, width,
+            height, byte_size, sha256, validated_at
+          )
+          SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+          WHERE EXISTS (
+            SELECT 1 FROM claims c JOIN journeys j ON j.id = c.journey_id
+            WHERE c.id = ? AND c.submitted_at IS NULL AND c.cancelled_at IS NULL
+              AND c.reservation_expires_at > ? AND c.reveal_started_at IS NOT NULL
+              AND c.reveal_started_at + ? > ? AND j.status = 'RESERVED'
+          )`,
+        )
+        .bind(
+          claimId,
+          claim.journey_id,
+          drawingId,
+          storagePath,
+          image.mimeType,
+          image.width,
+          image.height,
+          image.bytes.byteLength,
+          image.sha256,
+          now,
+          claimId,
+          now,
+          (SERVER_CONFIG.revealSeconds + SERVER_CONFIG.redrawSeconds +
+            SERVER_CONFIG.confirmationSeconds) * 1000,
+          now,
+        ),
+      database
+        .prepare(
+          `UPDATE claims SET reservation_expires_at = ?
+           WHERE id = ? AND submitted_at IS NULL AND cancelled_at IS NULL
+             AND EXISTS (SELECT 1 FROM claim_drafts WHERE claim_id = ?)`,
+        )
+        .bind(locationExpiresAt, claimId, claimId),
+      database
+        .prepare(
+          `UPDATE journeys SET reservation_expires_at = ?, updated_at = ?
+           WHERE id = ? AND status = 'RESERVED'
+             AND EXISTS (SELECT 1 FROM claim_drafts WHERE claim_id = ?)`,
+        )
+        .bind(locationExpiresAt, now, claim.journey_id, claimId),
+    ]);
+
+    if (changes(results[0]) !== 1) {
+      const existing = await database
+        .prepare(`SELECT claim_id FROM claim_drafts WHERE claim_id = ?`)
+        .bind(claimId)
+        .first<{ claim_id: string }>();
+      await getFiles().delete(storagePath);
+      if (existing) return getClaimState(request, claimId);
+      throw new HttpError(409, 'VALIDATION_UNAVAILABLE', 'The validation window has ended.');
+    }
+  } catch (error) {
+    const persisted = await getDatabase()
+      .prepare(`SELECT claim_id FROM claim_drafts WHERE claim_id = ? AND storage_path = ?`)
+      .bind(claimId, storagePath)
+      .first<{ claim_id: string }>();
+    if (!persisted) await getFiles().delete(storagePath);
+    throw error;
+  }
+
+  return getClaimState(request, claimId);
+}
+
+export async function submitRedraw(
+  request: Request,
+  claimId: string,
   location?: DrawingLocationInput | null,
 ) {
   await ensureSchema();
@@ -639,27 +858,22 @@ export async function submitRedraw(
   if (claim.submitted_at) {
     throw new HttpError(409, 'ALREADY_SUBMITTED', 'This contribution was already submitted.');
   }
-  if (claim.reservation_expires_at <= now) {
+  if (claim.cancelled_at || claim.journey_status !== 'RESERVED' || claim.reservation_expires_at <= now) {
     await releaseExpiredJourney(claim.journey_id);
     throw new HttpError(410, 'RESERVATION_EXPIRED', 'Your temporary reservation expired.');
   }
-  if (!claim.reveal_started_at) {
-    throw new HttpError(409, 'REVEAL_NOT_STARTED', 'View the drawing before redrawing it.');
-  }
-  if (claim.reveal_started_at + SERVER_CONFIG.revealSeconds * 1000 > now) {
-    throw new HttpError(409, 'REVEAL_IN_PROGRESS', 'Wait until the observation ends before submitting.');
-  }
-  if (claim.journey_status !== 'RESERVED') {
-    throw new HttpError(409, 'CLAIM_UNAVAILABLE', 'This Drawmory is no longer reserved for this session.');
+  if (
+    !claim.draft_drawing_id || !claim.draft_storage_path || !claim.draft_mime_type ||
+    claim.draft_width == null || claim.draft_height == null || claim.draft_byte_size == null ||
+    !claim.draft_sha256
+  ) {
+    throw new HttpError(409, 'DRAWING_NOT_VALIDATED', 'Validate the drawing before adding its location.');
   }
 
-  const image = await validateDataImage(imageDataUrl);
   const stepIndex = claim.redraw_count + 1;
-  const drawingId = randomId('drw');
   const receiptId = randomId('rcp');
   const receiptToken = randomToken();
   const receiptHash = await hashToken(receiptToken);
-  const storagePath = `journeys/${claim.journey_id}/${stepIndex}-${drawingId}.${image.extension}`;
   const drawingLocation = normalizeDrawingLocation(location, {
     countryCode: claim.country_code,
     city: claim.city,
@@ -675,89 +889,88 @@ export async function submitRedraw(
       ? 'AVAILABLE_WORLD'
       : 'AWAITING_HANDOFF';
   const nextHandoffMode = autoForwarded ? 'WORLD' : null;
+  const database = getDatabase();
+  const results = await database.batch([
+    database
+      .prepare(
+        `INSERT INTO drawings (
+          id, journey_id, step_index, storage_path, mime_type, width, height,
+          byte_size, sha256, country_code, city, latitude, longitude,
+          location_precision, created_at
+        )
+        SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+        WHERE EXISTS (
+          SELECT 1 FROM claims c JOIN journeys j ON j.id = c.journey_id
+          JOIN claim_drafts cd ON cd.claim_id = c.id
+          WHERE c.id = ? AND c.submitted_at IS NULL AND c.cancelled_at IS NULL
+            AND c.reservation_expires_at > ? AND j.status = 'RESERVED'
+            AND cd.drawing_id = ?
+        )`,
+      )
+      .bind(
+        claim.draft_drawing_id,
+        claim.journey_id,
+        stepIndex,
+        claim.draft_storage_path,
+        claim.draft_mime_type,
+        claim.draft_width,
+        claim.draft_height,
+        claim.draft_byte_size,
+        claim.draft_sha256,
+        drawingLocation.countryCode,
+        drawingLocation.city,
+        drawingLocation.latitude,
+        drawingLocation.longitude,
+        drawingLocation.locationPrecision,
+        now,
+        claimId,
+        now,
+        claim.draft_drawing_id,
+      ),
+    database
+      .prepare(
+        `INSERT INTO receipts (id, journey_id, step_index, token_hash, created_at)
+         SELECT ?, ?, ?, ?, ?
+         WHERE EXISTS (SELECT 1 FROM drawings WHERE id = ?)`,
+      )
+      .bind(receiptId, claim.journey_id, stepIndex, receiptHash, now, claim.draft_drawing_id),
+    database
+      .prepare(
+        `UPDATE claims SET submitted_at = ?
+         WHERE id = ? AND submitted_at IS NULL AND cancelled_at IS NULL
+           AND EXISTS (SELECT 1 FROM drawings WHERE id = ?)`,
+      )
+      .bind(now, claimId, claim.draft_drawing_id),
+    database
+      .prepare(
+        `UPDATE journeys
+         SET redraw_count = ?, current_drawing_id = ?, status = ?, updated_at = ?,
+             completed_at = ?, reservation_expires_at = NULL,
+             previous_available_state = NULL, handoff_mode = ?
+         WHERE id = ? AND status = 'RESERVED'
+           AND EXISTS (SELECT 1 FROM claims WHERE id = ? AND submitted_at = ?)`,
+      )
+      .bind(
+        stepIndex,
+        claim.draft_drawing_id,
+        nextStatus,
+        now,
+        completed ? now : null,
+        nextHandoffMode,
+        claim.journey_id,
+        claimId,
+        now,
+      ),
+    database
+      .prepare(
+        `DELETE FROM claim_drafts WHERE claim_id = ?
+         AND EXISTS (SELECT 1 FROM claims WHERE id = ? AND submitted_at = ?)`,
+      )
+      .bind(claimId, claimId, now),
+  ]);
 
-  await getFiles().put(storagePath, image.bytes, {
-    httpMetadata: { contentType: image.mimeType },
-    customMetadata: { sha256: image.sha256 },
-  });
-
-  try {
-    const database = getDatabase();
-    const results = await database.batch([
-      database
-        .prepare(
-          `INSERT INTO drawings (
-            id, journey_id, step_index, storage_path, mime_type, width, height,
-            byte_size, sha256, country_code, city, latitude, longitude,
-            location_precision, created_at
-          )
-          SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
-          WHERE EXISTS (
-            SELECT 1 FROM claims c JOIN journeys j ON j.id = c.journey_id
-            WHERE c.id = ? AND c.submitted_at IS NULL AND c.reservation_expires_at > ?
-              AND j.status = 'RESERVED'
-          )`,
-        )
-        .bind(
-          drawingId,
-          claim.journey_id,
-          stepIndex,
-          storagePath,
-          image.mimeType,
-          image.width,
-          image.height,
-          image.bytes.byteLength,
-          image.sha256,
-          drawingLocation.countryCode,
-          drawingLocation.city,
-          drawingLocation.latitude,
-          drawingLocation.longitude,
-          drawingLocation.locationPrecision,
-          now,
-          claimId,
-          now,
-        ),
-      database
-        .prepare(
-          `INSERT INTO receipts (id, journey_id, step_index, token_hash, created_at)
-           SELECT ?, ?, ?, ?, ?
-           WHERE EXISTS (SELECT 1 FROM claims WHERE id = ? AND submitted_at IS NULL)`,
-        )
-        .bind(receiptId, claim.journey_id, stepIndex, receiptHash, now, claimId),
-      database
-        .prepare(
-          `UPDATE claims SET submitted_at = ?
-           WHERE id = ? AND submitted_at IS NULL AND reservation_expires_at > ?`,
-        )
-        .bind(now, claimId, now),
-      database
-        .prepare(
-          `UPDATE journeys
-           SET redraw_count = ?, current_drawing_id = ?, status = ?, updated_at = ?,
-               completed_at = ?, reservation_expires_at = NULL,
-               previous_available_state = NULL, handoff_mode = ?
-           WHERE id = ? AND status = 'RESERVED'
-             AND EXISTS (SELECT 1 FROM claims WHERE id = ? AND submitted_at = ?)`,
-        )
-        .bind(
-          stepIndex,
-          drawingId,
-          nextStatus,
-          now,
-          completed ? now : null,
-          nextHandoffMode,
-          claim.journey_id,
-          claimId,
-          now,
-        ),
-    ]);
-
-    if (results.some((result) => changes(result) !== 1)) {
-      throw new Error('The contribution could not be committed atomically.');
-    }
-  } catch (error) {
-    await getFiles().delete(storagePath);
-    throw error;
+  if (results.some((result) => changes(result) !== 1)) {
+    throw new Error('The contribution could not be committed atomically.');
   }
 
   return {
@@ -769,6 +982,22 @@ export async function submitRedraw(
     redrawCount: stepIndex,
     targetRedraws: claim.target_redraws,
   };
+}
+
+export async function abandonExpiredClaim(request: Request, claimId: string) {
+  await ensureSchema();
+  const claim = await authenticatedClaim(request, claimId);
+  if (claim.submitted_at) return { released: false, submitted: true };
+  if (claim.cancelled_at) return { released: true };
+  const deadlines = claimDeadlines(claim);
+  const releaseDeadline = claim.draft_drawing_id
+    ? claim.reservation_expires_at
+    : deadlines.confirmationExpiresAt;
+  if (!releaseDeadline || releaseDeadline > Date.now()) {
+    throw new HttpError(409, 'CONFIRMATION_ACTIVE', 'The confirmation window is still active.');
+  }
+  const released = await releaseExpiredJourney(claim.journey_id);
+  return { released };
 }
 
 export async function getReceipt(receiptToken: string) {
@@ -1081,6 +1310,12 @@ export async function reportClaim(request: Request, claimId: string) {
     getDatabase()
       .prepare(`UPDATE handoffs SET status = 'REPORTED' WHERE journey_id = ?`)
       .bind(claim.journey_id),
+    getDatabase()
+      .prepare(`DELETE FROM claim_drafts WHERE claim_id = ?`)
+      .bind(claimId),
   ]);
+  if (claim.draft_storage_path) {
+    await getFiles().delete(claim.draft_storage_path);
+  }
   return { reported: true };
 }

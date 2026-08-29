@@ -9,6 +9,23 @@ const SITE_CREATOR_PLACEHOLDER_DATABASE_ID =
 
 const { d1, r2 } = hostingConfig;
 
+const localRuntimeVariableNames = [
+  'DRAWMORY_REVEAL_SECONDS',
+  'DRAWMORY_REDRAW_SECONDS',
+  'DRAWMORY_CONFIRMATION_SECONDS',
+  'DRAWMORY_LOCATION_SECONDS',
+  'DRAWMORY_CLAIM_SECONDS',
+  'DRAWMORY_WORLD_OFFER_SECONDS',
+  'DRAWMORY_ADMIN_CAPABILITY',
+  'DRAWMORY_ADMIN_SESSION_SECRET',
+] as const;
+
+const localRuntimeVars = Object.fromEntries(
+  localRuntimeVariableNames.flatMap((name) =>
+    process.env[name] ? [[name, process.env[name]]] : [],
+  ),
+);
+
 // macOS Seatbelt blocks FSEvents, so Codex previews need polling for HMR.
 const isCodexSeatbeltSandbox = process.env.CODEX_SANDBOX === 'seatbelt';
 
@@ -32,6 +49,7 @@ const localBindingConfig = {
         },
       ]
     : [],
+  vars: localRuntimeVars,
 };
 
 export default defineConfig(async () => {

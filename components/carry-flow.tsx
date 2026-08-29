@@ -13,17 +13,30 @@ import { SiteHeader } from './site-header';
 import { LocationPicker } from './location-picker';
 import type { DrawingLocationInput } from '@/lib/location';
 
+type ClaimPhase =
+  | 'ready'
+  | 'observing'
+  | 'drawing'
+  | 'confirming'
+  | 'location'
+  | 'expired'
+  | 'submitted';
+
 type ClaimState = {
   claimId: string;
   journeyId: string;
   publicSlug: string;
-  phase: 'ready' | 'observing' | 'drawing' | 'expired' | 'submitted';
+  phase: ClaimPhase;
   redrawCount: number;
   targetRedraws: number;
   revealStartedAt: number | null;
   revealSeconds: number;
   redrawSeconds: number;
+  confirmationSeconds: number;
   reservationExpiresAt: number;
+  observationEndsAt: number | null;
+  drawingExpiresAt: number | null;
+  confirmationExpiresAt: number | null;
   imageUrl: string | null;
 };
 
@@ -41,38 +54,70 @@ function secondsLeft(deadline: number | null, now: number) {
   return deadline ? Math.max(0, Math.ceil((deadline - now) / 1000)) : 0;
 }
 
+function formatCountdown(seconds: number) {
+  const minutes = Math.floor(seconds / 60);
+  return `${String(minutes).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`;
+}
+
+function currentPhase(claim: ClaimState | null, now: number): ClaimPhase | null {
+  if (!claim) return null;
+  if (claim.phase === 'location') {
+    return now < claim.reservationExpiresAt ? 'location' : 'expired';
+  }
+  if (claim.phase === 'ready') return now < claim.reservationExpiresAt ? 'ready' : 'expired';
+  if (['expired', 'submitted'].includes(claim.phase)) return claim.phase;
+  if (claim.observationEndsAt && now < claim.observationEndsAt) return 'observing';
+  if (claim.drawingExpiresAt && now < claim.drawingExpiresAt) return 'drawing';
+  if (claim.confirmationExpiresAt && now < claim.confirmationExpiresAt) return 'confirming';
+  return 'expired';
+}
+
 export function CarryFlow({ claimId }: { claimId: string }) {
   const { t } = useLanguage();
   const canvasRef = useRef<DrawingCanvasHandle>(null);
-  const handledTimeout = useRef(false);
+  const releaseSent = useRef(false);
   const [claim, setClaim] = useState<ClaimState | null>(null);
   const [now, setNow] = useState(() => Date.now());
-  const [drawingDeadline, setDrawingDeadline] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [emptyExpired, setEmptyExpired] = useState(false);
   const [location, setLocation] = useState<DrawingLocationInput>({});
-  const effectivePhase =
-    claim?.phase === 'observing' &&
-    claim.revealStartedAt &&
-    claim.revealStartedAt + claim.revealSeconds * 1000 <= now
-      ? 'drawing'
-      : claim?.phase;
+  const effectivePhase = currentPhase(claim, now);
 
-  const submitDrawing = useCallback(async () => {
-    if (busy || !claim) return;
-    const imageDataUrl = canvasRef.current?.exportImage();
+  const validateDrawing = useCallback(async () => {
+    if (busy || !claim || !canvasRef.current) return;
+    if (canvasRef.current.isEmpty()) {
+      setError(t('emptyDrawingValidation'));
+      return;
+    }
+    const imageDataUrl = canvasRef.current.exportImage();
     if (!imageDataUrl) {
-      setEmptyExpired(true);
-      handledTimeout.current = true;
+      setError(t('emptyDrawingValidation'));
       return;
     }
     setBusy(true);
     setError(null);
     try {
+      const state = await apiFetch<ClaimState>(
+        `/api/claims/${encodeURIComponent(claimId)}/validate`,
+        { method: 'POST', body: JSON.stringify({ imageDataUrl }) },
+      );
+      setClaim(state);
+      setNow(Date.now());
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : t('validationFailed'));
+    } finally {
+      setBusy(false);
+    }
+  }, [busy, claim, claimId, t]);
+
+  const finishLocation = useCallback(async (selectedLocation: DrawingLocationInput | null) => {
+    if (busy || !claim) return;
+    setBusy(true);
+    setError(null);
+    try {
       const result = await apiFetch<SubmissionResult>(
         `/api/claims/${encodeURIComponent(claimId)}/submit`,
-        { method: 'POST', body: JSON.stringify({ imageDataUrl, location }) },
+        { method: 'POST', body: JSON.stringify({ location: selectedLocation }) },
       );
       saveReceipt({
         token: result.receiptToken,
@@ -90,46 +135,43 @@ export function CarryFlow({ claimId }: { claimId: string }) {
         );
       }
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : 'The drawing could not be submitted.');
+      setError(caught instanceof Error ? caught.message : t('locationSaveFailed'));
       setBusy(false);
     }
-  }, [busy, claim, claimId, location]);
+  }, [busy, claim, claimId, t]);
 
   useEffect(() => {
     apiFetch<ClaimState>(`/api/claims/${encodeURIComponent(claimId)}`)
       .then((state) => {
         setClaim(state);
-        if (state.phase === 'drawing' || (state.phase === 'observing' && state.revealStartedAt)) {
-          const drawingStartsAt = state.revealStartedAt
-            ? state.revealStartedAt + state.revealSeconds * 1000
-            : Date.now();
-          setDrawingDeadline(
-            Math.min(drawingStartsAt + state.redrawSeconds * 1000, state.reservationExpiresAt),
-          );
-          handledTimeout.current = false;
-        }
+        setNow(Date.now());
       })
       .catch((caught) => setError(caught instanceof Error ? caught.message : t('invalidLink')));
   }, [claimId, t]);
 
   useEffect(() => {
-    if (!claim || !effectivePhase || !['ready', 'observing', 'drawing'].includes(effectivePhase)) return;
-    const interval = window.setInterval(() => setNow(Date.now()), 200);
-    return () => window.clearInterval(interval);
-  }, [claim, effectivePhase]);
-
-  useEffect(() => {
-    if (!claim || effectivePhase !== 'drawing' || !drawingDeadline || handledTimeout.current || busy) {
+    if (!effectivePhase || !['ready', 'observing', 'drawing', 'confirming', 'location'].includes(effectivePhase)) {
       return;
     }
-    const timeout = window.setTimeout(() => {
-      if (handledTimeout.current) return;
-      handledTimeout.current = true;
-      if (canvasRef.current?.isEmpty()) setEmptyExpired(true);
-      else void submitDrawing();
-    }, Math.max(0, drawingDeadline - Date.now()));
-    return () => window.clearTimeout(timeout);
-  }, [busy, claim, drawingDeadline, effectivePhase, submitDrawing]);
+    const interval = window.setInterval(() => setNow(Date.now()), 200);
+    return () => window.clearInterval(interval);
+  }, [effectivePhase]);
+
+  useEffect(() => {
+    if (!claim || releaseSent.current || claim.phase === 'submitted') {
+      return;
+    }
+    const releaseDeadline = claim.phase === 'location'
+      ? claim.reservationExpiresAt
+      : claim.confirmationExpiresAt;
+    if (!releaseDeadline || now < releaseDeadline) return;
+    releaseSent.current = true;
+    void apiFetch(`/api/claims/${encodeURIComponent(claimId)}/abandon`, { method: 'POST' })
+      .catch(() => undefined)
+      .finally(() => {
+        setClaim((current) => current ? { ...current, phase: 'expired' } : current);
+      });
+  }, [claim, claimId, now]);
 
   async function beginObservation() {
     if (busy) return;
@@ -142,15 +184,7 @@ export function CarryFlow({ claimId }: { claimId: string }) {
       );
       setClaim(state);
       setNow(Date.now());
-      if (state.revealStartedAt) {
-        setDrawingDeadline(
-          Math.min(
-            state.revealStartedAt + (state.revealSeconds + state.redrawSeconds) * 1000,
-            state.reservationExpiresAt,
-          ),
-        );
-        handledTimeout.current = false;
-      }
+      releaseSent.current = false;
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : t('reservationExpired'));
     } finally {
@@ -159,13 +193,13 @@ export function CarryFlow({ claimId }: { claimId: string }) {
   }
 
   async function report() {
-    if (!window.confirm('Report this drawing and end its journey?')) return;
+    if (!window.confirm(t('reportConfirm'))) return;
     setBusy(true);
     try {
       await apiFetch(`/api/claims/${encodeURIComponent(claimId)}/report`, { method: 'POST' });
       navigateTo('/receive');
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : 'The report could not be sent.');
+      setError(caught instanceof Error ? caught.message : t('reportFailed'));
       setBusy(false);
     }
   }
@@ -191,10 +225,26 @@ export function CarryFlow({ claimId }: { claimId: string }) {
     return (
       <main className="app-shell">
         <SiteHeader compact />
-        <section className="center-card">
+        <section className="center-card" data-testid="claim-expired">
           <span className="result-icon">⌛</span>
-          <h1>{t('reservationExpired')}</h1>
+          <h1>{t('stepReleased')}</h1>
+          <p>{t('stepReleasedBody')}</p>
           <DocumentLink className="primary-button" href="/receive">{t('tryAgain')}</DocumentLink>
+        </section>
+      </main>
+    );
+  }
+
+  if (effectivePhase === 'submitted') {
+    return (
+      <main className="app-shell">
+        <SiteHeader compact />
+        <section className="center-card">
+          <span className="result-icon">✓</span>
+          <h1>{t('carried')}</h1>
+          <DocumentLink className="primary-button" href={`/journey/${encodeURIComponent(claim.publicSlug)}`}>
+            {t('openJourney')}
+          </DocumentLink>
         </section>
       </main>
     );
@@ -218,13 +268,12 @@ export function CarryFlow({ claimId }: { claimId: string }) {
     );
   }
 
-  if (effectivePhase === 'observing' && claim.revealStartedAt) {
-    const deadline = claim.revealStartedAt + claim.revealSeconds * 1000;
+  if (effectivePhase === 'observing') {
     return (
       <main className="observe-stage">
         <div className="observe-topline">
           <span>{t('remember')}</span>
-          <strong>{secondsLeft(deadline, now)}</strong>
+          <strong>{secondsLeft(claim.observationEndsAt, now)}</strong>
         </div>
         <div className="observed-image-frame">
           {claim.imageUrl ? <img src={claim.imageUrl} alt="Drawing to remember" draggable={false} /> : null}
@@ -233,6 +282,52 @@ export function CarryFlow({ claimId }: { claimId: string }) {
       </main>
     );
   }
+
+  if (effectivePhase === 'location') {
+    return (
+      <main className="app-shell location-stage-shell">
+        <SiteHeader compact />
+        <section className="flow-shell location-stage" data-testid="location-step">
+          <div className="flow-heading">
+            <span className="flow-kicker">{t('drawingValidated')}</span>
+            <h1>{t('addLocationTitle')}</h1>
+            <p>{t('addLocationBody')}</p>
+          </div>
+          <LocationPicker
+            value={location}
+            onChange={setLocation}
+            inheritsPrevious
+            cityRequiresCountry
+          />
+          <div className="location-stage-actions">
+            <button
+              className="secondary-button"
+              type="button"
+              onClick={() => finishLocation(null)}
+              disabled={busy}
+              data-testid="skip-location"
+            >
+              {t('skipLocation')}
+            </button>
+            <button
+              className="primary-button"
+              type="button"
+              onClick={() => finishLocation(location)}
+              disabled={busy}
+              data-testid="save-location"
+            >
+              {busy ? t('submitting') : t('saveLocation')} <span aria-hidden="true">→</span>
+            </button>
+          </div>
+          {error ? <p className="error-banner" role="alert">{error}</p> : null}
+        </section>
+      </main>
+    );
+  }
+
+  const confirming = effectivePhase === 'confirming';
+  const timerDeadline = confirming ? claim.confirmationExpiresAt : claim.drawingExpiresAt;
+  const timerSeconds = secondsLeft(timerDeadline, now);
 
   return (
     <main className="app-shell">
@@ -246,40 +341,36 @@ export function CarryFlow({ claimId }: { claimId: string }) {
             <h1>{t('drawMemory')}</h1>
             <p>{t('redrawHint')}</p>
           </div>
-          <div className="timer-chip" aria-live="polite">
-            <span>{t('timeLeft')}</span>
-            <strong>{secondsLeft(drawingDeadline, now)}s</strong>
+          <div className={`timer-chip${confirming ? ' timer-chip-warning' : ''}`} aria-live="polite">
+            <span>{confirming ? t('confirmationLeft') : t('timeLeft')}</span>
+            <strong>{formatCountdown(timerSeconds)}</strong>
           </div>
         </div>
 
-        <DrawingCanvas ref={canvasRef} compact disabled={busy} />
-        <LocationPicker value={location} onChange={setLocation} inheritsPrevious />
+        <DrawingCanvas ref={canvasRef} compact disabled={busy || confirming} />
         <div className="flow-actions carry-actions">
           <button className="report-button" type="button" onClick={report} disabled={busy}>{t('reportSkip')}</button>
-          <button className="primary-button" type="button" onClick={submitDrawing} disabled={busy} data-testid="submit-redraw">
-            {busy ? t('submitting') : t('submit')} <span aria-hidden="true">→</span>
+          <button className="primary-button" type="button" onClick={validateDrawing} disabled={busy} data-testid="submit-redraw">
+            {busy ? t('validatingDrawing') : t('validateDrawing')} <span aria-hidden="true">→</span>
           </button>
         </div>
-
-        {emptyExpired ? (
-          <div className="empty-confirmation" role="alert">
-            <strong>{t('emptyAtEnd')}</strong>
-            <button
-              className="secondary-button"
-              type="button"
-              onClick={() => {
-                const nextDeadline = Math.min(Date.now() + 15_000, claim.reservationExpiresAt);
-                setDrawingDeadline(nextDeadline);
-                setEmptyExpired(false);
-                handledTimeout.current = false;
-              }}
-            >
-              {t('moreTime')}
-            </button>
-          </div>
-        ) : null}
         {error ? <p className="error-banner" role="alert">{error}</p> : null}
       </section>
+
+      {confirming ? (
+        <div className="confirmation-overlay" role="dialog" aria-modal="true" aria-labelledby="confirmation-title" data-testid="validation-timeout">
+          <section className="confirmation-card">
+            <span className="confirmation-clock" aria-hidden="true">10:00</span>
+            <p className="flow-kicker">{t('drawingTimeEnded')}</p>
+            <h2 id="confirmation-title">{t('confirmationTitle')}</h2>
+            <p>{t('confirmationBody', { seconds: claim.confirmationSeconds })}</p>
+            <strong className="confirmation-countdown">{formatCountdown(timerSeconds)}</strong>
+            <button className="primary-button wide-button" type="button" onClick={validateDrawing} disabled={busy} data-testid="confirm-redraw">
+              {busy ? t('validatingDrawing') : t('confirmDrawing')}
+            </button>
+          </section>
+        </div>
+      ) : null}
     </main>
   );
 }

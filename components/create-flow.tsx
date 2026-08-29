@@ -139,7 +139,7 @@ export function CreateFlow() {
                 }}
               />
             </label>
-            <LocationPicker value={location} onChange={setLocation} />
+            <LocationPicker value={location} onChange={setLocation} cityRequiresCountry />
             <div className="flow-actions split-actions">
               <button className="secondary-button" type="button" onClick={() => setStep('draw')}>
                 ←
