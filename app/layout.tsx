@@ -17,8 +17,8 @@ export async function generateMetadata(): Promise<Metadata> {
     title: `${BRAND.name} — ${BRAND.tagline}`,
     description: BRAND.description,
     icons: {
-      icon: [{ url: '/favicon.svg?v=5', type: 'image/svg+xml', sizes: 'any' }],
-      shortcut: '/favicon.svg?v=5',
+      icon: [{ url: '/favicon.svg?v=6', type: 'image/svg+xml', sizes: 'any' }],
+      shortcut: '/favicon.svg?v=6',
     },
     openGraph: {
       title: `${BRAND.name} — ${BRAND.tagline}`,
