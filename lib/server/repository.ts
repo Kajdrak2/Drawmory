@@ -64,6 +64,9 @@ type DrawingRow = {
   created_at: number;
 };
 
+export type PublicJourneyFilter = 'all' | 'completed' | 'in_progress';
+export type PublicJourneySort = 'random' | 'newest' | 'oldest' | 'progress' | 'votes';
+
 export class HttpError extends Error {
   constructor(
     public status: number,
@@ -763,6 +766,105 @@ export async function getReceipt(receiptToken: string) {
   };
 }
 
+export async function listPublicJourneys(options: {
+  status: PublicJourneyFilter;
+  sort: PublicJourneySort;
+  limit: number;
+}) {
+  await ensureSchema();
+  await releaseAllExpiredJourneys();
+
+  const statusClause =
+    options.status === 'completed'
+      ? `AND j.status = 'COMPLETED'`
+      : options.status === 'in_progress'
+        ? `AND j.status != 'COMPLETED'`
+        : '';
+  const orderClause: Record<PublicJourneySort, string> = {
+    random: 'RANDOM()',
+    newest: 'j.created_at DESC',
+    oldest: 'j.created_at ASC',
+    progress:
+      'CAST(j.redraw_count AS REAL) / CASE WHEN j.target_redraws = 0 THEN 1 ELSE j.target_redraws END DESC, j.updated_at DESC',
+    votes: 'vote_count DESC, j.completed_at DESC, j.created_at DESC',
+  };
+
+  const rows = await getDatabase()
+    .prepare(
+      `SELECT j.public_slug, j.status, j.target_redraws, j.redraw_count,
+              j.created_at, j.updated_at, j.completed_at, j.current_drawing_id,
+              COUNT(v.id) AS vote_count
+       FROM journeys j
+       LEFT JOIN journey_votes v ON v.journey_id = j.id
+       WHERE j.flagged = 0 AND j.status != 'EXPIRED' ${statusClause}
+       GROUP BY j.id
+       ORDER BY ${orderClause[options.sort]}
+       LIMIT ?`,
+    )
+    .bind(options.limit)
+    .all<{
+      public_slug: string;
+      status: JourneyStatus;
+      target_redraws: number;
+      redraw_count: number;
+      created_at: number;
+      updated_at: number;
+      completed_at: number | null;
+      current_drawing_id: string | null;
+      vote_count: number;
+    }>();
+
+  return rows.results.map((journey) => ({
+    publicSlug: journey.public_slug,
+    status: journey.status,
+    targetRedraws: journey.target_redraws,
+    redrawCount: journey.redraw_count,
+    participantCount: journey.redraw_count + 1,
+    createdAt: journey.created_at,
+    updatedAt: journey.updated_at,
+    completedAt: journey.completed_at,
+    voteCount: Number(journey.vote_count),
+    coverImageUrl:
+      journey.status === 'COMPLETED' && journey.current_drawing_id
+        ? `/api/public/journeys/${encodeURIComponent(journey.public_slug)}/drawings/${encodeURIComponent(journey.current_drawing_id)}`
+        : null,
+  }));
+}
+
+export async function voteForJourney(publicSlug: string, voterToken: string) {
+  await ensureSchema();
+  const database = getDatabase();
+  const journey = await database
+    .prepare(
+      `SELECT id FROM journeys
+       WHERE public_slug = ? AND status = 'COMPLETED' AND flagged = 0`,
+    )
+    .bind(publicSlug)
+    .first<{ id: string }>();
+  if (!journey) {
+    throw new HttpError(404, 'VOTING_UNAVAILABLE', 'This Drawmory is not open for voting.');
+  }
+
+  const voterHash = await hashToken(voterToken);
+  const inserted = await database
+    .prepare(
+      `INSERT OR IGNORE INTO journey_votes (id, journey_id, voter_hash, created_at)
+       VALUES (?, ?, ?, ?)`,
+    )
+    .bind(randomId('vot'), journey.id, voterHash, Date.now())
+    .run();
+  const count = await database
+    .prepare(`SELECT COUNT(*) AS vote_count FROM journey_votes WHERE journey_id = ?`)
+    .bind(journey.id)
+    .first<{ vote_count: number }>();
+
+  return {
+    voteCount: Number(count?.vote_count ?? 0),
+    accepted: changes(inserted) === 1,
+    voted: true,
+  };
+}
+
 export async function getPublicJourney(publicSlug: string) {
   await ensureSchema();
   let journey = await getDatabase()
@@ -807,6 +909,10 @@ export async function getPublicJourney(publicSlug: string) {
   const countryCount = new Set(
     drawings.map((drawing) => drawing.countryCode).filter((country) => country !== 'UNKNOWN'),
   ).size;
+  const votes = await getDatabase()
+    .prepare(`SELECT COUNT(*) AS vote_count FROM journey_votes WHERE journey_id = ?`)
+    .bind(journey.id)
+    .first<{ vote_count: number }>();
 
   return {
     publicSlug: journey.public_slug,
@@ -817,6 +923,7 @@ export async function getPublicJourney(publicSlug: string) {
     createdAt: journey.created_at,
     completedAt: journey.completed_at,
     countryCount,
+    voteCount: Number(votes?.vote_count ?? 0),
     drawings,
   };
 }

@@ -8,14 +8,30 @@ import {
   useRef,
   useState,
 } from 'react';
+import { useLanguage } from './language-provider';
 
 type Point = { x: number; y: number };
-type Stroke = {
+type DrawingTool = 'brush' | 'fill' | 'line' | 'rectangle' | 'ellipse' | 'eraser';
+type StrokeAction = {
+  kind: 'stroke';
   color: string;
   width: number;
   eraser: boolean;
   points: Point[];
 };
+type ShapeAction = {
+  kind: 'line' | 'rectangle' | 'ellipse';
+  color: string;
+  width: number;
+  start: Point;
+  end: Point;
+};
+type FillAction = {
+  kind: 'fill';
+  color: string;
+  point: Point;
+};
+type DrawingAction = StrokeAction | ShapeAction | FillAction;
 
 export type DrawingCanvasHandle = {
   exportImage: () => string | null;
@@ -33,51 +49,165 @@ const CANVAS_SIZE = 768;
 const COLORS = ['#1d1830', '#ff6b55', '#f5b800', '#3a9d66', '#276ad6', '#7656d6', '#ed4d9a', '#8a5a3b'];
 const WIDTHS = [6, 13, 24];
 
-function paintStroke(context: CanvasRenderingContext2D, stroke: Stroke) {
-  if (stroke.points.length === 0) return;
+function hexToRgba(hex: string) {
+  const value = Number.parseInt(hex.slice(1), 16);
+  return [(value >> 16) & 255, (value >> 8) & 255, value & 255, 255] as const;
+}
+
+function floodFill(context: CanvasRenderingContext2D, point: Point, color: string) {
+  const { width, height } = context.canvas;
+  const x = Math.max(0, Math.min(width - 1, Math.floor(point.x)));
+  const y = Math.max(0, Math.min(height - 1, Math.floor(point.y)));
+  const image = context.getImageData(0, 0, width, height);
+  const data = image.data;
+  const startPixel = y * width + x;
+  const startOffset = startPixel * 4;
+  const target = [
+    data[startOffset],
+    data[startOffset + 1],
+    data[startOffset + 2],
+    data[startOffset + 3],
+  ];
+  const replacement = hexToRgba(color);
+  if (target.every((channel, index) => channel === replacement[index])) return;
+
+  const tolerance = 10;
+  const matchesTarget = (pixel: number) => {
+    const offset = pixel * 4;
+    return (
+      Math.abs(data[offset] - target[0]) <= tolerance &&
+      Math.abs(data[offset + 1] - target[1]) <= tolerance &&
+      Math.abs(data[offset + 2] - target[2]) <= tolerance &&
+      Math.abs(data[offset + 3] - target[3]) <= tolerance
+    );
+  };
+  const replacePixel = (pixel: number) => {
+    const offset = pixel * 4;
+    data[offset] = replacement[0];
+    data[offset + 1] = replacement[1];
+    data[offset + 2] = replacement[2];
+    data[offset + 3] = replacement[3];
+  };
+
+  const queue = new Int32Array(width * height);
+  const visited = new Uint8Array(width * height);
+  let head = 0;
+  let tail = 0;
+  queue[tail++] = startPixel;
+  visited[startPixel] = 1;
+  replacePixel(startPixel);
+
+  while (head < tail) {
+    const pixel = queue[head++];
+    const pixelX = pixel % width;
+    const candidates = [
+      pixelX > 0 ? pixel - 1 : -1,
+      pixelX < width - 1 ? pixel + 1 : -1,
+      pixel >= width ? pixel - width : -1,
+      pixel < width * (height - 1) ? pixel + width : -1,
+    ];
+    for (const candidate of candidates) {
+      if (candidate >= 0 && !visited[candidate] && matchesTarget(candidate)) {
+        visited[candidate] = 1;
+        replacePixel(candidate);
+        queue[tail++] = candidate;
+      }
+    }
+  }
+
+  context.putImageData(image, 0, 0);
+}
+
+function paintAction(context: CanvasRenderingContext2D, action: DrawingAction) {
+  if (action.kind === 'fill') {
+    floodFill(context, action.point, action.color);
+    return;
+  }
+
   context.save();
-  context.strokeStyle = stroke.eraser ? '#fffdf8' : stroke.color;
-  context.fillStyle = stroke.eraser ? '#fffdf8' : stroke.color;
-  context.lineWidth = stroke.width;
+  context.strokeStyle = action.kind === 'stroke' && action.eraser ? '#fffdf8' : action.color;
+  context.fillStyle = action.kind === 'stroke' && action.eraser ? '#fffdf8' : action.color;
+  context.lineWidth = action.width;
   context.lineCap = 'round';
   context.lineJoin = 'round';
-  if (stroke.points.length === 1) {
-    const [point] = stroke.points;
-    context.beginPath();
-    context.arc(point.x, point.y, stroke.width / 2, 0, Math.PI * 2);
-    context.fill();
-  } else {
-    context.beginPath();
-    context.moveTo(stroke.points[0].x, stroke.points[0].y);
-    for (const point of stroke.points.slice(1)) context.lineTo(point.x, point.y);
-    context.stroke();
+
+  if (action.kind === 'stroke') {
+    if (action.points.length === 0) {
+      context.restore();
+      return;
+    }
+    if (action.points.length === 1) {
+      const [point] = action.points;
+      context.beginPath();
+      context.arc(point.x, point.y, action.width / 2, 0, Math.PI * 2);
+      context.fill();
+    } else {
+      context.beginPath();
+      context.moveTo(action.points[0].x, action.points[0].y);
+      for (const point of action.points.slice(1)) context.lineTo(point.x, point.y);
+      context.stroke();
+    }
+    context.restore();
+    return;
   }
+
+  const left = Math.min(action.start.x, action.end.x);
+  const top = Math.min(action.start.y, action.end.y);
+  const shapeWidth = Math.abs(action.end.x - action.start.x);
+  const shapeHeight = Math.abs(action.end.y - action.start.y);
+  context.beginPath();
+  if (action.kind === 'line') {
+    context.moveTo(action.start.x, action.start.y);
+    context.lineTo(action.end.x, action.end.y);
+  } else if (action.kind === 'rectangle') {
+    context.rect(left, top, shapeWidth, shapeHeight);
+  } else {
+    context.ellipse(
+      left + shapeWidth / 2,
+      top + shapeHeight / 2,
+      Math.max(shapeWidth / 2, 0.5),
+      Math.max(shapeHeight / 2, 0.5),
+      0,
+      0,
+      Math.PI * 2,
+    );
+  }
+  context.stroke();
   context.restore();
+}
+
+function hasVisibleDrawing(actions: DrawingAction[]) {
+  return actions.some((action) => {
+    if (action.kind === 'fill') return true;
+    if (action.kind === 'stroke') return !action.eraser && action.points.length > 0;
+    return Math.hypot(action.end.x - action.start.x, action.end.y - action.start.y) > 2;
+  });
 }
 
 export const DrawingCanvas = forwardRef<DrawingCanvasHandle, DrawingCanvasProps>(
   function DrawingCanvas({ onDrawingChange, disabled = false, compact = false }, ref) {
+    const { t } = useLanguage();
     const canvasRef = useRef<HTMLCanvasElement>(null);
-    const activeStroke = useRef<Stroke | null>(null);
-    const [strokes, setStrokes] = useState<Stroke[]>([]);
-    const [redoStack, setRedoStack] = useState<Stroke[]>([]);
+    const activeAction = useRef<StrokeAction | ShapeAction | null>(null);
+    const [actions, setActions] = useState<DrawingAction[]>([]);
+    const [redoStack, setRedoStack] = useState<DrawingAction[]>([]);
     const [color, setColor] = useState(COLORS[0]);
     const [width, setWidth] = useState(WIDTHS[1]);
-    const [eraser, setEraser] = useState(false);
+    const [tool, setTool] = useState<DrawingTool>('brush');
 
-    const redraw = useCallback((nextStrokes = strokes) => {
+    const renderActions = useCallback((nextActions: DrawingAction[]) => {
       const canvas = canvasRef.current;
-      const context = canvas?.getContext('2d');
+      const context = canvas?.getContext('2d', { willReadFrequently: true });
       if (!canvas || !context) return;
       context.fillStyle = '#fffdf8';
       context.fillRect(0, 0, CANVAS_SIZE, CANVAS_SIZE);
-      for (const stroke of nextStrokes) paintStroke(context, stroke);
-    }, [strokes]);
+      for (const action of nextActions) paintAction(context, action);
+    }, []);
 
     useEffect(() => {
-      redraw();
-      onDrawingChange?.(strokes.some((stroke) => !stroke.eraser && stroke.points.length > 0));
-    }, [onDrawingChange, redraw, strokes]);
+      renderActions(actions);
+      onDrawingChange?.(hasVisibleDrawing(actions));
+    }, [actions, onDrawingChange, renderActions]);
 
     const pointFromEvent = (event: React.PointerEvent<HTMLCanvasElement>): Point => {
       const rectangle = event.currentTarget.getBoundingClientRect();
@@ -90,83 +220,138 @@ export const DrawingCanvas = forwardRef<DrawingCanvasHandle, DrawingCanvasProps>
     const handlePointerDown = (event: React.PointerEvent<HTMLCanvasElement>) => {
       if (disabled) return;
       event.preventDefault();
+      const point = pointFromEvent(event);
+      if (tool === 'fill') {
+        const action: FillAction = { kind: 'fill', color, point };
+        const nextActions = [...actions, action];
+        setActions(nextActions);
+        setRedoStack([]);
+        renderActions(nextActions);
+        return;
+      }
+
       event.currentTarget.setPointerCapture(event.pointerId);
-      const stroke: Stroke = { color, width, eraser, points: [pointFromEvent(event)] };
-      activeStroke.current = stroke;
-      const context = event.currentTarget.getContext('2d');
-      if (context) paintStroke(context, stroke);
+      const action: StrokeAction | ShapeAction =
+        tool === 'brush' || tool === 'eraser'
+          ? {
+              kind: 'stroke',
+              color,
+              width,
+              eraser: tool === 'eraser',
+              points: [point],
+            }
+          : { kind: tool, color, width, start: point, end: point };
+      activeAction.current = action;
+      const context = event.currentTarget.getContext('2d', { willReadFrequently: true });
+      if (context) paintAction(context, action);
     };
 
     const handlePointerMove = (event: React.PointerEvent<HTMLCanvasElement>) => {
-      const stroke = activeStroke.current;
-      if (!stroke || disabled) return;
+      const action = activeAction.current;
+      if (!action || disabled) return;
       event.preventDefault();
       const point = pointFromEvent(event);
-      const previous = stroke.points.at(-1);
-      stroke.points.push(point);
-      const context = event.currentTarget.getContext('2d');
-      if (context && previous) paintStroke(context, { ...stroke, points: [previous, point] });
+      const context = event.currentTarget.getContext('2d', { willReadFrequently: true });
+      if (!context) return;
+
+      if (action.kind === 'stroke') {
+        const previous = action.points.at(-1);
+        action.points.push(point);
+        if (previous) paintAction(context, { ...action, points: [previous, point] });
+      } else {
+        action.end = point;
+        renderActions(actions);
+        paintAction(context, action);
+      }
     };
 
-    const finishStroke = (event: React.PointerEvent<HTMLCanvasElement>) => {
-      const stroke = activeStroke.current;
-      if (!stroke) return;
+    const finishAction = (event: React.PointerEvent<HTMLCanvasElement>) => {
+      const action = activeAction.current;
+      if (!action) return;
       event.preventDefault();
-      activeStroke.current = null;
-      setStrokes((current) => [...current, stroke]);
+      activeAction.current = null;
+      const nextActions = [...actions, action];
+      setActions(nextActions);
       setRedoStack([]);
+      renderActions(nextActions);
     };
 
     const clear = () => {
-      setStrokes([]);
+      setActions([]);
       setRedoStack([]);
     };
 
     useImperativeHandle(ref, () => ({
       exportImage: () => {
-        if (!strokes.some((stroke) => !stroke.eraser && stroke.points.length > 0)) return null;
-        redraw(strokes);
+        if (!hasVisibleDrawing(actions)) return null;
+        renderActions(actions);
         const canvas = canvasRef.current;
         if (!canvas) return null;
         const webp = canvas.toDataURL('image/webp', 0.82);
         return webp.startsWith('data:image/webp') ? webp : canvas.toDataURL('image/png');
       },
       clear,
-      isEmpty: () => !strokes.some((stroke) => !stroke.eraser && stroke.points.length > 0),
+      isEmpty: () => !hasVisibleDrawing(actions),
     }));
+
+    const tools: Array<{ id: DrawingTool; symbol: string; label: string }> = [
+      { id: 'brush', symbol: '✎', label: t('brushTool') },
+      { id: 'fill', symbol: '▣', label: t('fillTool') },
+      { id: 'line', symbol: '╱', label: t('lineTool') },
+      { id: 'rectangle', symbol: '□', label: t('rectangleTool') },
+      { id: 'ellipse', symbol: '○', label: t('ellipseTool') },
+      { id: 'eraser', symbol: '⌫', label: t('eraserTool') },
+    ];
 
     return (
       <section className={`drawing-studio${compact ? ' drawing-studio-compact' : ''}`}>
         <div className="canvas-frame">
           <canvas
             ref={canvasRef}
-            className="drawing-surface"
+            className={`drawing-surface tool-${tool}`}
             width={CANVAS_SIZE}
             height={CANVAS_SIZE}
-            aria-label="Drawing canvas"
+            aria-label={t('drawingCanvas')}
             data-testid="drawing-canvas"
             onPointerDown={handlePointerDown}
             onPointerMove={handlePointerMove}
-            onPointerUp={finishStroke}
-            onPointerCancel={finishStroke}
+            onPointerUp={finishAction}
+            onPointerCancel={finishAction}
           />
           <span className="canvas-corner canvas-corner-one" aria-hidden="true" />
           <span className="canvas-corner canvas-corner-two" aria-hidden="true" />
         </div>
 
-        <div className="drawing-tools" aria-label="Drawing tools">
-          <div className="tool-group color-tools" aria-label="Colors">
+        <div className="drawing-tools" aria-label={t('drawingTools')}>
+          <div className="tool-group mode-tools" aria-label={t('toolMode')}>
+            {tools.map((item) => (
+              <button
+                key={item.id}
+                type="button"
+                className={`tool-button mode-button${tool === item.id ? ' active' : ''}`}
+                aria-label={item.label}
+                aria-pressed={tool === item.id}
+                onClick={() => setTool(item.id)}
+                disabled={disabled}
+              >
+                <span aria-hidden="true">{item.symbol}</span>
+                <small>{item.label}</small>
+              </button>
+            ))}
+          </div>
+
+          <div className="tool-group color-tools" aria-label={t('colorsTool')}>
             {COLORS.map((swatch) => (
               <button
                 key={swatch}
                 type="button"
-                className={`color-swatch${color === swatch && !eraser ? ' active' : ''}`}
+                className={`color-swatch${color === swatch && tool !== 'eraser' ? ' active' : ''}`}
                 style={{ backgroundColor: swatch }}
-                aria-label={`Use color ${swatch}`}
-                aria-pressed={color === swatch && !eraser}
+                aria-label={`${t('useColor')} ${swatch}`}
+                aria-pressed={color === swatch && tool !== 'eraser'}
                 onClick={() => {
                   setColor(swatch);
-                  setEraser(false);
+                  setTool((current) => (current === 'eraser' ? 'brush' : current));
                 }}
                 disabled={disabled}
               />
@@ -174,13 +359,13 @@ export const DrawingCanvas = forwardRef<DrawingCanvasHandle, DrawingCanvasProps>
           </div>
 
           <div className="tool-row">
-            <div className="tool-group width-tools" aria-label="Stroke width">
+            <div className="tool-group width-tools" aria-label={t('strokeWidthTool')}>
               {WIDTHS.map((strokeWidth, index) => (
                 <button
                   key={strokeWidth}
                   type="button"
                   className={`tool-button width-button${width === strokeWidth ? ' active' : ''}`}
-                  aria-label={`Stroke width ${index + 1}`}
+                  aria-label={`${t('strokeWidthTool')} ${index + 1}`}
                   aria-pressed={width === strokeWidth}
                   onClick={() => setWidth(strokeWidth)}
                   disabled={disabled}
@@ -192,38 +377,30 @@ export const DrawingCanvas = forwardRef<DrawingCanvasHandle, DrawingCanvasProps>
 
             <div className="tool-group history-tools">
               <button
-                className={`tool-button${eraser ? ' active' : ''}`}
-                type="button"
-                aria-label="Eraser"
-                aria-pressed={eraser}
-                onClick={() => setEraser((current) => !current)}
-                disabled={disabled}
-              >
-                Erase
-              </button>
-              <button
                 className="tool-button icon-button"
                 type="button"
-                aria-label="Undo"
+                aria-label={t('undoTool')}
+                title={t('undoTool')}
                 onClick={() => {
-                  setStrokes((current) => {
+                  setActions((current) => {
                     const removed = current.at(-1);
                     if (removed) setRedoStack((redo) => [...redo, removed]);
                     return current.slice(0, -1);
                   });
                 }}
-                disabled={disabled || strokes.length === 0}
+                disabled={disabled || actions.length === 0}
               >
                 ↶
               </button>
               <button
                 className="tool-button icon-button"
                 type="button"
-                aria-label="Redo"
+                aria-label={t('redoTool')}
+                title={t('redoTool')}
                 onClick={() => {
                   setRedoStack((current) => {
                     const restored = current.at(-1);
-                    if (restored) setStrokes((drawn) => [...drawn, restored]);
+                    if (restored) setActions((drawn) => [...drawn, restored]);
                     return current.slice(0, -1);
                   });
                 }}
@@ -232,12 +409,12 @@ export const DrawingCanvas = forwardRef<DrawingCanvasHandle, DrawingCanvasProps>
                 ↷
               </button>
               <button
-                className="tool-button"
+                className="tool-button clear-tool"
                 type="button"
                 onClick={clear}
-                disabled={disabled || strokes.length === 0}
+                disabled={disabled || actions.length === 0}
               >
-                Clear
+                {t('clearTool')}
               </button>
             </div>
           </div>

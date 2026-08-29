@@ -96,3 +96,17 @@ export const receipts = sqliteTable(
     index('idx_receipts_journey_step').on(table.journeyId, table.stepIndex),
   ],
 );
+
+export const journeyVotes = sqliteTable(
+  'journey_votes',
+  {
+    id: text('id').primaryKey(),
+    journeyId: text('journey_id').notNull(),
+    voterHash: text('voter_hash').notNull(),
+    createdAt: integer('created_at').notNull(),
+  },
+  (table) => [
+    uniqueIndex('idx_journey_votes_journey_voter').on(table.journeyId, table.voterHash),
+    index('idx_journey_votes_journey').on(table.journeyId),
+  ],
+);

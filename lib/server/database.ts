@@ -58,11 +58,21 @@ const schemaStatements = [
     token_hash TEXT NOT NULL UNIQUE,
     created_at INTEGER NOT NULL
   )`,
+  `CREATE TABLE IF NOT EXISTS journey_votes (
+    id TEXT PRIMARY KEY,
+    journey_id TEXT NOT NULL,
+    voter_hash TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    UNIQUE(journey_id, voter_hash)
+  )`,
   `CREATE INDEX IF NOT EXISTS idx_journeys_world_queue ON journeys(status, flagged, updated_at)`,
   `CREATE UNIQUE INDEX IF NOT EXISTS idx_drawings_journey_step ON drawings(journey_id, step_index)`,
   `CREATE INDEX IF NOT EXISTS idx_handoffs_journey_status ON handoffs(journey_id, status)`,
   `CREATE INDEX IF NOT EXISTS idx_claims_journey ON claims(journey_id, created_at)`,
   `CREATE INDEX IF NOT EXISTS idx_receipts_journey_step ON receipts(journey_id, step_index)`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS idx_journey_votes_journey_voter ON journey_votes(journey_id, voter_hash)`,
+  `CREATE INDEX IF NOT EXISTS idx_journey_votes_journey ON journey_votes(journey_id)`,
+  `PRAGMA optimize`,
 ];
 
 let schemaReady: Promise<void> | undefined;

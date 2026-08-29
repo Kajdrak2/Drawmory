@@ -3,6 +3,7 @@
 import { SiteHeader } from '@/components/site-header';
 import { useLanguage } from '@/components/language-provider';
 import { DocumentLink } from '@/components/document-link';
+import { CommunityGallery } from '@/components/community-gallery';
 
 export default function Home() {
   const { t } = useLanguage();
@@ -42,22 +43,7 @@ export default function Home() {
           </DocumentLink>
         </div>
 
-        <DocumentLink className="how-shortcut" href="/how-it-works">
-          <span className="shortcut-symbol" aria-hidden="true">?</span>
-          <span>
-            <strong>{t('howItWorks')}</strong>
-            <small>{t('howSubtitle')}</small>
-          </span>
-          <span className="shortcut-arrow" aria-hidden="true">→</span>
-        </DocumentLink>
-
-        <footer className="landing-footer">
-          <p>{t('privacyLine')}</p>
-          <div className="footer-links">
-            <DocumentLink href="/memories">{t('yourDevice')}</DocumentLink>
-            <p className="footer-note">{t('privacyTail')}</p>
-          </div>
-        </footer>
+        <CommunityGallery />
       </section>
     </main>
   );

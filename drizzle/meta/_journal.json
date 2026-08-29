@@ -8,6 +8,13 @@
       "when": 1788004275835,
       "tag": "0000_tan_old_lace",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1788010238372,
+      "tag": "0001_fearless_albert_cleary",
+      "breakpoints": true
     }
   ]
 }
