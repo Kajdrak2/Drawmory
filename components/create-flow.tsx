@@ -1,11 +1,11 @@
 'use client';
 
-import { useRouter } from 'next/navigation';
 import { useRef, useState } from 'react';
 import { DrawingCanvas, DrawingCanvasHandle } from './drawing-canvas';
 import { SiteHeader } from './site-header';
 import { useLanguage } from './language-provider';
 import { apiFetch } from '@/lib/client/api';
+import { navigateTo } from '@/lib/client/document-navigation';
 import { saveReceipt } from '@/lib/client/receipts';
 
 type CreateResult = {
@@ -17,7 +17,6 @@ type CreateResult = {
 
 export function CreateFlow() {
   const { t } = useLanguage();
-  const router = useRouter();
   const canvasRef = useRef<DrawingCanvasHandle>(null);
   const [step, setStep] = useState<'draw' | 'length'>('draw');
   const [imageDataUrl, setImageDataUrl] = useState<string | null>(null);
@@ -52,7 +51,7 @@ export function CreateFlow() {
         publicSlug: result.publicSlug,
         savedAt: Date.now(),
       });
-      router.push(
+      navigateTo(
         `/pass/${encodeURIComponent(result.journeyId)}#receipt=${encodeURIComponent(result.receiptToken)}`,
       );
     } catch (caught) {

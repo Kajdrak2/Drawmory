@@ -1,8 +1,8 @@
 'use client';
 
-import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { getSavedReceipts, SavedReceipt } from '@/lib/client/receipts';
+import { DocumentLink } from './document-link';
 import { useLanguage } from './language-provider';
 import { SiteHeader } from './site-header';
 
@@ -25,12 +25,12 @@ export function DeviceMemories() {
         {receipts?.length ? (
           <div className="memory-list">
             {receipts.map((receipt, index) => (
-              <Link key={receipt.token} href={`/receipt/${encodeURIComponent(receipt.token)}`}>
+              <DocumentLink key={receipt.token} href={`/receipt/${encodeURIComponent(receipt.token)}`}>
                 <span className="memory-number">#{String(receipts.length - index).padStart(2, '0')}</span>
                 <strong>Drawmory</strong>
                 <small>{new Date(receipt.savedAt).toLocaleDateString()}</small>
                 <i aria-hidden="true">→</i>
-              </Link>
+              </DocumentLink>
             ))}
           </div>
         ) : receipts ? (
@@ -38,7 +38,7 @@ export function DeviceMemories() {
         ) : (
           <div className="loading-orbit" />
         )}
-        <Link className="primary-button" href="/create">{t('createSubtitle')}</Link>
+        <DocumentLink className="primary-button" href="/create">{t('createSubtitle')}</DocumentLink>
       </section>
     </main>
   );

@@ -1,9 +1,9 @@
 'use client';
 
-import Link from 'next/link';
-import { useRouter } from 'next/navigation';
 import { FormEvent, useState } from 'react';
 import { apiFetch } from '@/lib/client/api';
+import { navigateTo } from '@/lib/client/document-navigation';
+import { DocumentLink } from './document-link';
 import { useLanguage } from './language-provider';
 import { HandoffPreview, OfferPanel } from './offer-panel';
 import { SiteHeader } from './site-header';
@@ -18,7 +18,6 @@ type ClaimResult = { claimId: string };
 
 export function ReceiveFlow() {
   const { t } = useLanguage();
-  const router = useRouter();
   const [code, setCode] = useState('');
   const [secret, setSecret] = useState<{ token?: string; code?: string } | null>(null);
   const [preview, setPreview] = useState<HandoffPreview | null>(null);
@@ -72,7 +71,7 @@ export function ReceiveFlow() {
         method: 'POST',
         body: JSON.stringify(secret),
       });
-      router.push(`/carry/${encodeURIComponent(result.claimId)}`);
+      navigateTo(`/carry/${encodeURIComponent(result.claimId)}`);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : t('invalidLink'));
       setPreview(null);
@@ -132,7 +131,7 @@ export function ReceiveFlow() {
             <strong>{t('worldQuiet')}</strong>
             <div className="button-row">
               <button className="secondary-button" type="button" onClick={receiveWorld}>{t('tryAgain')}</button>
-              <Link className="quiet-link" href="/create">{t('createSubtitle')}</Link>
+              <DocumentLink className="quiet-link" href="/create">{t('createSubtitle')}</DocumentLink>
             </div>
           </div>
         ) : null}

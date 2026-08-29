@@ -1,8 +1,8 @@
 'use client';
 
-import Link from 'next/link';
 import { SiteHeader } from '@/components/site-header';
 import { useLanguage } from '@/components/language-provider';
+import { DocumentLink } from '@/components/document-link';
 
 export default function Home() {
   const { t } = useLanguage();
@@ -10,19 +10,16 @@ export default function Home() {
     <main className="landing-shell">
       <SiteHeader />
 
-      <section className="hero-section">
-        <div className="hero-copy">
-          <p className="eyebrow">{t('eyebrow')}</p>
+      <section className="home-start">
+        <div className="home-intro">
           <h1>
-            {t('taglineLead')} <span>{t('taglineAccent')}</span>
-            <br />
-            {t('taglineTail')}
+            {t('taglineLead')} <span>{t('taglineAccent')}</span> {t('taglineTail')}
           </h1>
-          <p className="hero-lede">{t('homeLede')}</p>
+          <p>{t('homeLede')}</p>
         </div>
 
-        <div className="action-grid" aria-label="Choose how to begin">
-          <Link className="action-card action-card-create" href="/create">
+        <div className="action-grid" aria-label={t('startPrompt')}>
+          <DocumentLink className="action-card action-card-create" href="/create">
             <span className="action-index">01</span>
             <span className="action-gesture action-gesture-draw" aria-hidden="true" />
             <span className="action-label">{t('create')}</span>
@@ -30,9 +27,9 @@ export default function Home() {
             <span className="action-arrow" aria-hidden="true">
               ↗
             </span>
-          </Link>
+          </DocumentLink>
 
-          <Link className="action-card action-card-receive" href="/receive">
+          <DocumentLink className="action-card action-card-receive" href="/receive">
             <span className="action-index">02</span>
             <span className="action-gesture action-gesture-receive" aria-hidden="true">
               <span />
@@ -42,13 +39,22 @@ export default function Home() {
             <span className="action-arrow" aria-hidden="true">
               ↗
             </span>
-          </Link>
+          </DocumentLink>
         </div>
+
+        <DocumentLink className="how-shortcut" href="/how-it-works">
+          <span className="shortcut-symbol" aria-hidden="true">?</span>
+          <span>
+            <strong>{t('howItWorks')}</strong>
+            <small>{t('howSubtitle')}</small>
+          </span>
+          <span className="shortcut-arrow" aria-hidden="true">→</span>
+        </DocumentLink>
 
         <footer className="landing-footer">
           <p>{t('privacyLine')}</p>
           <div className="footer-links">
-            <Link href="/memories">{t('yourDevice')}</Link>
+            <DocumentLink href="/memories">{t('yourDevice')}</DocumentLink>
             <p className="footer-note">{t('privacyTail')}</p>
           </div>
         </footer>

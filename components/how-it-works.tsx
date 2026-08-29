@@ -1,7 +1,7 @@
 'use client';
 
-import Link from 'next/link';
 import { useLanguage } from './language-provider';
+import { DocumentLink } from './document-link';
 import { SiteHeader } from './site-header';
 
 export function HowItWorks() {
@@ -26,8 +26,8 @@ export function HowItWorks() {
           ))}
         </ol>
         <div className="reveal-actions">
-          <Link className="primary-button" href="/create">{t('createSubtitle')}</Link>
-          <Link className="secondary-button" href="/receive">{t('receiveSubtitle')}</Link>
+          <DocumentLink className="primary-button" href="/create">{t('createSubtitle')}</DocumentLink>
+          <DocumentLink className="secondary-button" href="/receive">{t('receiveSubtitle')}</DocumentLink>
         </div>
       </section>
     </main>

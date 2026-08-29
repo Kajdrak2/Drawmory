@@ -1,5 +1,5 @@
-import Link from 'next/link';
 import { SiteHeader } from '@/components/site-header';
+import { DocumentLink } from '@/components/document-link';
 
 export default function NotFound() {
   return (
@@ -9,7 +9,7 @@ export default function NotFound() {
         <span className="result-icon">404</span>
         <h1>This memory drifted away.</h1>
         <p>The page or secret link could not be found.</p>
-        <Link className="primary-button" href="/">Back home</Link>
+        <DocumentLink className="primary-button" href="/">Back home</DocumentLink>
       </section>
     </main>
   );

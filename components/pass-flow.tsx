@@ -2,10 +2,10 @@
 
 /* eslint-disable @next/next/no-img-element */
 
-import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import QRCode from 'qrcode';
 import { apiFetch } from '@/lib/client/api';
+import { DocumentLink } from './document-link';
 import { useLanguage } from './language-provider';
 import { SiteHeader } from './site-header';
 
@@ -99,7 +99,7 @@ export function PassFlow({ journeyId }: { journeyId: string }) {
         <section className="center-card">
           <span className="result-icon">?</span>
           <h1>{t('invalidLink')}</h1>
-          <Link className="primary-button" href="/">{t('backHome')}</Link>
+          <DocumentLink className="primary-button" href="/">{t('backHome')}</DocumentLink>
         </section>
       </main>
     );
@@ -167,7 +167,7 @@ export function PassFlow({ journeyId }: { journeyId: string }) {
         {result ? (
           <div className="receipt-strip">
             <span>{t('saveLink')}</span>
-            <Link href={`/receipt/${encodeURIComponent(receiptToken)}`}>{t('receipt')} →</Link>
+            <DocumentLink href={`/receipt/${encodeURIComponent(receiptToken)}`}>{t('receipt')} →</DocumentLink>
           </div>
         ) : null}
 

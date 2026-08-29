@@ -2,11 +2,11 @@
 
 /* eslint-disable @next/next/no-img-element */
 
-import Link from 'next/link';
-import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { apiFetch } from '@/lib/client/api';
+import { navigateTo } from '@/lib/client/document-navigation';
 import { saveReceipt } from '@/lib/client/receipts';
+import { DocumentLink } from './document-link';
 import { DrawingCanvas, DrawingCanvasHandle } from './drawing-canvas';
 import { useLanguage } from './language-provider';
 import { SiteHeader } from './site-header';
@@ -40,7 +40,6 @@ function secondsLeft(deadline: number | null, now: number) {
 
 export function CarryFlow({ claimId }: { claimId: string }) {
   const { t } = useLanguage();
-  const router = useRouter();
   const canvasRef = useRef<DrawingCanvasHandle>(null);
   const handledTimeout = useRef(false);
   const [claim, setClaim] = useState<ClaimState | null>(null);
@@ -78,9 +77,9 @@ export function CarryFlow({ claimId }: { claimId: string }) {
         savedAt: Date.now(),
       });
       if (result.completed) {
-        router.push(`/journey/${encodeURIComponent(result.publicSlug)}`);
+        navigateTo(`/journey/${encodeURIComponent(result.publicSlug)}`);
       } else {
-        router.push(
+        navigateTo(
           `/pass/${encodeURIComponent(result.journeyId)}#receipt=${encodeURIComponent(result.receiptToken)}`,
         );
       }
@@ -88,7 +87,7 @@ export function CarryFlow({ claimId }: { claimId: string }) {
       setError(caught instanceof Error ? caught.message : 'The drawing could not be submitted.');
       setBusy(false);
     }
-  }, [busy, claim, claimId, router]);
+  }, [busy, claim, claimId]);
 
   useEffect(() => {
     apiFetch<ClaimState>(`/api/claims/${encodeURIComponent(claimId)}`)
@@ -158,7 +157,7 @@ export function CarryFlow({ claimId }: { claimId: string }) {
     setBusy(true);
     try {
       await apiFetch(`/api/claims/${encodeURIComponent(claimId)}/report`, { method: 'POST' });
-      router.push('/receive');
+      navigateTo('/receive');
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'The report could not be sent.');
       setBusy(false);
@@ -172,7 +171,7 @@ export function CarryFlow({ claimId }: { claimId: string }) {
         <section className="center-card">
           <span className="result-icon">!</span>
           <h1>{error}</h1>
-          <Link className="primary-button" href="/receive">{t('receive')}</Link>
+          <DocumentLink className="primary-button" href="/receive">{t('receive')}</DocumentLink>
         </section>
       </main>
     );
@@ -189,7 +188,7 @@ export function CarryFlow({ claimId }: { claimId: string }) {
         <section className="center-card">
           <span className="result-icon">⌛</span>
           <h1>{t('reservationExpired')}</h1>
-          <Link className="primary-button" href="/receive">{t('tryAgain')}</Link>
+          <DocumentLink className="primary-button" href="/receive">{t('tryAgain')}</DocumentLink>
         </section>
       </main>
     );

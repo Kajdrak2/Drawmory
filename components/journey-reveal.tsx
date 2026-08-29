@@ -2,9 +2,9 @@
 
 /* eslint-disable @next/next/no-img-element */
 
-import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 import { apiFetch } from '@/lib/client/api';
+import { DocumentLink } from './document-link';
 import { useLanguage } from './language-provider';
 import { SiteHeader } from './site-header';
 
@@ -88,7 +88,7 @@ export function JourneyReveal({ publicSlug }: { publicSlug: string }) {
     return (
       <main className="app-shell"><SiteHeader compact /><section className="center-card">
         <span className="result-icon">?</span><h1>{error ?? t('invalidLink')}</h1>
-        <Link className="primary-button" href="/">{t('backHome')}</Link>
+        <DocumentLink className="primary-button" href="/">{t('backHome')}</DocumentLink>
       </section></main>
     );
   }
@@ -107,7 +107,7 @@ export function JourneyReveal({ publicSlug }: { publicSlug: string }) {
               <span key={index} className={index <= journey.redrawCount ? 'complete' : ''} />
             ))}
           </div>
-          <Link className="secondary-button" href="/">{t('backHome')}</Link>
+          <DocumentLink className="secondary-button" href="/">{t('backHome')}</DocumentLink>
         </section>
       </main>
     );
@@ -185,7 +185,7 @@ export function JourneyReveal({ publicSlug }: { publicSlug: string }) {
 
         <div className="reveal-actions">
           <button className="primary-button" type="button" onClick={share}>{t('shareReveal')}</button>
-          <Link className="secondary-button" href="/create">{t('createSubtitle')}</Link>
+          <DocumentLink className="secondary-button" href="/create">{t('createSubtitle')}</DocumentLink>
         </div>
       </section>
     </main>

@@ -1,8 +1,8 @@
 'use client';
 
-import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { apiFetch } from '@/lib/client/api';
+import { DocumentLink } from './document-link';
 import { useLanguage } from './language-provider';
 import { SiteHeader } from './site-header';
 
@@ -50,7 +50,7 @@ export function ReceiptFlow({ token }: { token: string }) {
           <>
             <span className="result-icon">?</span>
             <h1>{error}</h1>
-            <Link className="primary-button" href="/">{t('backHome')}</Link>
+            <DocumentLink className="primary-button" href="/">{t('backHome')}</DocumentLink>
           </>
         ) : null}
         {receipt ? (
@@ -67,20 +67,20 @@ export function ReceiptFlow({ token }: { token: string }) {
               ))}
             </div>
             {receipt.status === 'COMPLETED' ? (
-              <Link className="primary-button wide-button" href={`/journey/${receipt.publicSlug}`}>
+              <DocumentLink className="primary-button wide-button" href={`/journey/${receipt.publicSlug}`}>
                 {t('seeReveal')} →
-              </Link>
+              </DocumentLink>
             ) : receipt.canPass ? (
-              <Link
+              <DocumentLink
                 className="primary-button wide-button"
                 href={`/pass/${receipt.journeyId}#receipt=${encodeURIComponent(token)}`}
               >
                 {t('passTitle')} →
-              </Link>
+              </DocumentLink>
             ) : (
-              <Link className="secondary-button" href={`/journey/${receipt.publicSlug}`}>
+              <DocumentLink className="secondary-button" href={`/journey/${receipt.publicSlug}`}>
                 View progress
-              </Link>
+              </DocumentLink>
             )}
             <small>{t('saveLink')}</small>
           </>

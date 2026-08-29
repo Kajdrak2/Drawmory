@@ -10,6 +10,32 @@ async function addStroke(page: Page) {
   await page.mouse.up();
 }
 
+test('the home screen shows and opens every starting route on mobile', async ({ page }) => {
+  await page.goto('/');
+
+  const createLink = page.getByRole('link', { name: /Create Start a new Drawmory/i });
+  const receiveLink = page.getByRole('link', { name: /Receive Continue a Drawmory/i });
+  const howLink = page.getByRole('link', { name: /How it works The four steps/i });
+
+  await expect(createLink).toBeInViewport();
+  await expect(receiveLink).toBeInViewport();
+  await expect(howLink).toBeInViewport();
+
+  await howLink.click();
+  await expect(page).toHaveURL(/\/how-it-works$/);
+  await expect(page.getByRole('heading', { name: /One look\. One memory/i })).toBeVisible();
+
+  await page.goto('/');
+  await page.getByRole('link', { name: /Receive Continue a Drawmory/i }).click();
+  await expect(page).toHaveURL(/\/receive$/);
+  await expect(page.getByRole('heading', { name: /Continue a Drawmory/i })).toBeVisible();
+
+  await page.goto('/');
+  await page.getByRole('link', { name: /Create Start a new Drawmory/i }).click();
+  await expect(page).toHaveURL(/\/create$/);
+  await expect(page.getByRole('heading', { name: /Draw the first version/i })).toBeVisible();
+});
+
 test('a drawing travels through three anonymous carriers and reveals four frames', async ({
   browser,
 }) => {

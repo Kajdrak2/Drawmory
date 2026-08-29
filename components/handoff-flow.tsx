@@ -1,16 +1,15 @@
 'use client';
 
-import Link from 'next/link';
-import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { apiFetch } from '@/lib/client/api';
+import { navigateTo } from '@/lib/client/document-navigation';
+import { DocumentLink } from './document-link';
 import { useLanguage } from './language-provider';
 import { HandoffPreview, OfferPanel } from './offer-panel';
 import { SiteHeader } from './site-header';
 
 export function HandoffFlow({ token }: { token: string }) {
   const { t } = useLanguage();
-  const router = useRouter();
   const [preview, setPreview] = useState<HandoffPreview | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -32,7 +31,7 @@ export function HandoffFlow({ token }: { token: string }) {
         method: 'POST',
         body: JSON.stringify({ token }),
       });
-      router.push(`/carry/${encodeURIComponent(result.claimId)}`);
+      navigateTo(`/carry/${encodeURIComponent(result.claimId)}`);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : t('invalidLink'));
       setBusy(false);
@@ -49,7 +48,7 @@ export function HandoffFlow({ token }: { token: string }) {
           <section className="center-card">
             <span className="result-icon">!</span>
             <h1>{error}</h1>
-            <Link className="primary-button" href="/receive">{t('receive')}</Link>
+            <DocumentLink className="primary-button" href="/receive">{t('receive')}</DocumentLink>
           </section>
         ) : null}
       </section>
