@@ -68,10 +68,8 @@ export function CreateFlow() {
     <main className="app-shell">
       <SiteHeader compact />
       <section className="flow-shell">
-        <div className="flow-heading">
-          <span className="flow-kicker">{t('create')} · {step === 'draw' ? '01' : '02'}</span>
-          <h1>{step === 'draw' ? t('drawFirst') : t('chooseLength')}</h1>
-          <p>{step === 'draw' ? t('keepSimple') : t('privacyLine')}</p>
+        <div className="flow-heading minimal-heading">
+          <h1>{step === 'draw' ? t('create') : t('participants')}</h1>
         </div>
 
         {step === 'draw' ? (
@@ -100,7 +98,6 @@ export function CreateFlow() {
               >
                 <span className="length-number">4</span>
                 <strong>{t('fourParticipants')}</strong>
-                <small>{t('shortLoop')}</small>
               </button>
               <button
                 className={`length-card${targetParticipants === 8 ? ' selected' : ''}`}
@@ -111,7 +108,6 @@ export function CreateFlow() {
               >
                 <span className="length-number">8</span>
                 <strong>{t('eightParticipants')}</strong>
-                <small>{t('longerLoop')}</small>
               </button>
               <button
                 className={`length-card infinite-card${targetParticipants === 'infinite' ? ' selected' : ''}`}
@@ -122,7 +118,6 @@ export function CreateFlow() {
               >
                 <span className="length-number">∞</span>
                 <strong>{t('infiniteParticipants')}</strong>
-                <small>{t('infiniteHint')}</small>
               </button>
             </div>
             <label className="custom-participant-field">

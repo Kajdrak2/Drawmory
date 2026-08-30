@@ -86,10 +86,8 @@ export function ReceiveFlow() {
     <main className="app-shell">
       <SiteHeader compact />
       <section className="flow-shell receive-shell">
-        <div className="flow-heading">
-          <span className="flow-kicker">{t('receive')}</span>
-          <h1>{t('receiveSubtitle')}</h1>
-          <p>{t('privacyLine')}</p>
+        <div className="flow-heading minimal-heading">
+          <h1>{t('receive')}</h1>
         </div>
 
         {preview ? (
@@ -120,7 +118,6 @@ export function ReceiveFlow() {
               <span className="receive-index">02</span>
               <span className="world-orbit small-orbit" aria-hidden="true"><span /></span>
               <h2>{t('receiveWorld')}</h2>
-              <p>{t('worldHint')}</p>
               <button className="primary-button" type="button" onClick={receiveWorld} disabled={busy === 'world' || !ready} data-testid="receive-world">
                 {busy === 'world' ? '…' : t('receiveWorld')}
               </button>
@@ -133,7 +130,7 @@ export function ReceiveFlow() {
             <strong>{t('worldQuiet')}</strong>
             <div className="button-row">
               <button className="secondary-button" type="button" onClick={receiveWorld}>{t('tryAgain')}</button>
-              <DocumentLink className="quiet-link" href="/create">{t('createSubtitle')}</DocumentLink>
+              <DocumentLink className="quiet-link" href="/create">{t('create')}</DocumentLink>
             </div>
           </div>
         ) : null}

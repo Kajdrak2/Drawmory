@@ -11,10 +11,8 @@ export function HowItWorks() {
     <main className="app-shell how-page">
       <SiteHeader compact />
       <section className="how-shell">
-        <div className="flow-heading">
-          <span className="flow-kicker">{t('howItWorks')}</span>
-          <h1>{t('howTitle')}</h1>
-          <p>{t('howBody')}</p>
+        <div className="flow-heading minimal-heading">
+          <h1>{t('howItWorks')}</h1>
         </div>
         <ol className="how-steps">
           {steps.map((step, index) => (
@@ -26,8 +24,8 @@ export function HowItWorks() {
           ))}
         </ol>
         <div className="reveal-actions">
-          <DocumentLink className="primary-button" href="/create">{t('createSubtitle')}</DocumentLink>
-          <DocumentLink className="secondary-button" href="/receive">{t('receiveSubtitle')}</DocumentLink>
+          <DocumentLink className="primary-button" href="/create">{t('create')}</DocumentLink>
+          <DocumentLink className="secondary-button" href="/receive">{t('receive')}</DocumentLink>
         </div>
       </section>
     </main>

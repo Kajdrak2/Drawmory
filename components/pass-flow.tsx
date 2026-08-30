@@ -77,7 +77,7 @@ export function PassFlow({ journeyId }: { journeyId: string }) {
   const share = async () => {
     if (!handoffUrl) return;
     if (navigator.share) {
-      await navigator.share({ title: 'Drawmory', text: t('waitingForYou'), url: handoffUrl });
+      await navigator.share({ title: 'Drawmory', text: 'Drawmory', url: handoffUrl });
     } else {
       await copy();
     }
@@ -109,10 +109,8 @@ export function PassFlow({ journeyId }: { journeyId: string }) {
     <main className="app-shell">
       <SiteHeader compact />
       <section className="flow-shell pass-shell">
-        <div className="flow-heading">
-          <span className="flow-kicker">{t('passTitle')} · 03</span>
-          <h1>{result ? t('waiting') : t('passTitle')}</h1>
-          <p>{result ? t('saveLink') : t('privacyTail')}</p>
+        <div className="flow-heading minimal-heading">
+          <h1>{result ? t('waiting') : t('share')}</h1>
         </div>
 
         {!result ? (
@@ -126,7 +124,6 @@ export function PassFlow({ journeyId }: { journeyId: string }) {
             >
               <span className="handoff-symbol" aria-hidden="true">↗</span>
               <strong>{busy === 'PRIVATE' ? '…' : t('passSomeone')}</strong>
-              <small>{t('passSomeoneHint')}</small>
             </button>
             <button
               className="handoff-card world-handoff"
@@ -137,7 +134,6 @@ export function PassFlow({ journeyId }: { journeyId: string }) {
             >
               <span className="handoff-symbol world-symbol" aria-hidden="true">◎</span>
               <strong>{busy === 'WORLD' ? '…' : t('world')}</strong>
-              <small>{t('worldHint')}</small>
             </button>
           </div>
         ) : result.mode === 'PRIVATE' && handoffUrl ? (
@@ -161,7 +157,6 @@ export function PassFlow({ journeyId }: { journeyId: string }) {
           <div className="world-waiting-card">
             <span className="world-orbit" aria-hidden="true"><span /></span>
             <strong>{t('waiting')}</strong>
-            <p>{t('worldHint')}</p>
             <small>{t('worldLocked')}</small>
           </div>
         )}

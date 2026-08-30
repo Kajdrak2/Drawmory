@@ -18,8 +18,8 @@ export async function generateMetadata({
         : `${journey.redrawCount} of ${journey.targetRedraws} redraws — Drawmory`;
     const description =
       journey.status === 'COMPLETED'
-        ? 'See how this drawing changed as it travelled from memory to memory.'
-        : 'This Drawmory is still travelling.';
+        ? 'Completed Drawmory.'
+        : 'Drawmory in progress.';
     const firstImage = journey.drawings[0]?.imageUrl;
     return {
       title,

@@ -12,26 +12,20 @@ export default function Home() {
       <SiteHeader />
 
       <section className="home-start">
-        <div className="home-intro">
-          <h1>
-            {t('taglineLead')} <span>{t('taglineAccent')}</span> {t('taglineTail')}
-          </h1>
-        </div>
+        <h1 className="sr-only">Drawmory</h1>
 
         <div className="action-grid" aria-label={t('startPrompt')}>
-          <DocumentLink className="action-card action-card-create" href="/create">
+          <DocumentLink className="action-card action-card-create" href="/create" aria-label={t('create')}>
             <span className="action-index">01</span>
             <span className="action-label">{t('create')}</span>
-            <span className="action-subtitle">{t('createSubtitle')}</span>
             <span className="action-arrow" aria-hidden="true">
               ↗
             </span>
           </DocumentLink>
 
-          <DocumentLink className="action-card action-card-receive" href="/receive">
+          <DocumentLink className="action-card action-card-receive" href="/receive" aria-label={t('receive')}>
             <span className="action-index">02</span>
             <span className="action-label">{t('receive')}</span>
-            <span className="action-subtitle">{t('receiveSubtitle')}</span>
             <span className="action-arrow" aria-hidden="true">
               ↗
             </span>

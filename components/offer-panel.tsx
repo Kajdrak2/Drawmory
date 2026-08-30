@@ -23,11 +23,7 @@ export function OfferPanel({
   return (
     <section className="offer-panel" aria-live="polite">
       <span className="offer-eye" aria-hidden="true"><span /></span>
-      <p className="flow-kicker">{preview.mode === 'WORLD' ? t('world') : t('passSomeone')}</p>
-      <h2>{t('waitingForYou')}</h2>
-      <p>
-        {t('carrierNumber')} <strong>#{preview.redrawCount + 2}</strong>
-      </p>
+      <h2>Drawmory #{preview.redrawCount + 2}</h2>
       {preview.targetRedraws < 0 ? (
         <div className="infinite-progress" aria-label={t('openProgress', { count: preview.redrawCount + 1 })}>
           <strong>{preview.redrawCount + 1}</strong><span>→</span><b>∞</b>

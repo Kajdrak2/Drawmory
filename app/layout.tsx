@@ -14,20 +14,20 @@ export async function generateMetadata(): Promise<Metadata> {
 
   return {
     metadataBase,
-    title: `${BRAND.name} — ${BRAND.tagline}`,
+    title: BRAND.name,
     description: BRAND.description,
     icons: {
       icon: [{ url: '/favicon.svg?v=6', type: 'image/svg+xml', sizes: 'any' }],
       shortcut: '/favicon.svg?v=6',
     },
     openGraph: {
-      title: `${BRAND.name} — ${BRAND.tagline}`,
+      title: BRAND.name,
       description: BRAND.description,
-      images: [{ url: '/og.png', width: 1730, height: 909, alt: BRAND.tagline }],
+      images: [{ url: '/og.png', width: 1730, height: 909, alt: BRAND.name }],
     },
     twitter: {
       card: 'summary_large_image',
-      title: `${BRAND.name} — ${BRAND.tagline}`,
+      title: BRAND.name,
       description: BRAND.description,
       images: ['/og.png'],
     },

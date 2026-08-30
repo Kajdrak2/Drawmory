@@ -256,9 +256,7 @@ export function CarryFlow({ claimId }: { claimId: string }) {
         <SiteHeader compact />
         <section className="ready-card">
           <div className="memory-eye" aria-hidden="true"><span /></div>
-          <span className="flow-kicker">Memory {claim.redrawCount + 1} → {claim.redrawCount + 2}</span>
           <h1>{t('seeOnce', { seconds: claim.revealSeconds })}</h1>
-          <p>{t('remember')}</p>
           <button className="primary-button wide-button" type="button" onClick={beginObservation} disabled={busy} data-testid="start-reveal">
             {busy ? '…' : t('ready')}
           </button>
@@ -278,7 +276,6 @@ export function CarryFlow({ claimId }: { claimId: string }) {
         <div className="observed-image-frame">
           {claim.imageUrl ? <img src={claim.imageUrl} alt="Drawing to remember" draggable={false} /> : null}
         </div>
-        <p className="observe-instruction">{t('seeOnce', { seconds: claim.revealSeconds })}</p>
       </main>
     );
   }
@@ -288,11 +285,6 @@ export function CarryFlow({ claimId }: { claimId: string }) {
       <main className="app-shell location-stage-shell">
         <SiteHeader compact />
         <section className="flow-shell location-stage" data-testid="location-step">
-          <div className="flow-heading">
-            <span className="flow-kicker">{t('drawingValidated')}</span>
-            <h1>{t('addLocationTitle')}</h1>
-            <p>{t('addLocationBody')}</p>
-          </div>
           <LocationPicker
             value={location}
             onChange={setLocation}
@@ -336,10 +328,9 @@ export function CarryFlow({ claimId }: { claimId: string }) {
         <div className="drawing-heading-row">
           <div className="flow-heading">
             <span className="flow-kicker">
-              Redraw · {claim.redrawCount + 1}/{claim.targetRedraws < 0 ? '∞' : claim.targetRedraws}
+              {claim.redrawCount + 1}/{claim.targetRedraws < 0 ? '∞' : claim.targetRedraws}
             </span>
-            <h1>{t('drawMemory')}</h1>
-            <p>{t('redrawHint')}</p>
+            <h1>{t('redraw', { step: claim.redrawCount + 1 })}</h1>
           </div>
           <div className={`timer-chip${confirming ? ' timer-chip-warning' : ''}`} aria-live="polite">
             <span>{confirming ? t('confirmationLeft') : t('timeLeft')}</span>

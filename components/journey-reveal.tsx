@@ -109,7 +109,7 @@ export function JourneyReveal({ publicSlug }: { publicSlug: string }) {
 
   const share = async () => {
     if (navigator.share) {
-      await navigator.share({ title: 'Drawmory', text: t('seeWorldRemembered'), url: shareUrl });
+      await navigator.share({ title: 'Drawmory', text: `Drawmory #${publicSlug.slice(0, 5).toUpperCase()}`, url: shareUrl });
     } else {
       await navigator.clipboard.writeText(shareUrl);
     }
@@ -168,7 +168,7 @@ export function JourneyReveal({ publicSlug }: { publicSlug: string }) {
         <div className="reveal-heading reveal-heading-row">
           <div>
             <p className="eyebrow">{completed ? t('completeJourney') : t('ongoingJourney')}</p>
-            <h1>{t('seeWorldRemembered')}</h1>
+            <h1>Drawmory #{publicSlug.slice(0, 5).toUpperCase()}</h1>
           </div>
           <div className={`journey-state-badge${completed ? ' complete' : ''}`}>
             <strong>{journey.participantCount}</strong>
@@ -245,7 +245,7 @@ export function JourneyReveal({ publicSlug }: { publicSlug: string }) {
             <span aria-hidden="true">♥</span> {voted ? t('voted') : t('vote')} · {journey.voteCount}
           </button>
           <button className="primary-button" type="button" onClick={share}>{t('shareReveal')}</button>
-          <DocumentLink className="secondary-button" href="/create">{t('createSubtitle')}</DocumentLink>
+          <DocumentLink className="secondary-button" href="/create">{t('create')}</DocumentLink>
         </div>
         {error ? <p className="error-banner" role="alert">{error}</p> : null}
       </section>

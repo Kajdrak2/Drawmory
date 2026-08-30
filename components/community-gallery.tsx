@@ -262,9 +262,7 @@ export function CommunityGallery() {
       <section className="community-section library-section">
         <div className="community-heading">
           <div>
-            <p className="section-kicker">{t('community')}</p>
             <h2>{t('libraryTitle')}</h2>
-            <p>{t('librarySubtitle')}</p>
           </div>
           <div className="gallery-controls">
             <label className="filter-field">
@@ -324,9 +322,7 @@ export function CommunityGallery() {
       <section className="community-section hall-section">
         <div className="community-heading hall-heading">
           <div>
-            <p className="section-kicker">{t('communityPicks')}</p>
             <h2>{t('hallTitle')}</h2>
-            <p>{t('hallSubtitle')}</p>
           </div>
           <span className="hall-symbol" aria-hidden="true">★</span>
         </div>

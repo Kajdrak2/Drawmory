@@ -68,7 +68,7 @@ export function LocationPicker({
         <div>
           <p className="flow-kicker">{t('optional')}</p>
           <h2 id="location-title">{t('whereDrawing')}</h2>
-          <p>{inheritsPrevious ? t('locationInheritance') : t('locationPrivacy')}</p>
+          {inheritsPrevious ? <p>{t('locationInheritance')}</p> : null}
         </div>
         <span className="location-pin" aria-hidden="true">⌖</span>
       </div>

@@ -20,7 +20,6 @@ export function DeviceMemories() {
         <div className="flow-heading">
           <span className="flow-kicker">Local memories</span>
           <h1>{t('yourDevice')}</h1>
-          <p>{t('privacyLine')}</p>
         </div>
         {receipts?.length ? (
           <div className="memory-list">
@@ -38,7 +37,7 @@ export function DeviceMemories() {
         ) : (
           <div className="loading-orbit" />
         )}
-        <DocumentLink className="primary-button" href="/create">{t('createSubtitle')}</DocumentLink>
+        <DocumentLink className="primary-button" href="/create">{t('create')}</DocumentLink>
       </section>
     </main>
   );

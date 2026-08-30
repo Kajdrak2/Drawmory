@@ -27,8 +27,8 @@ async function fillCanvas(page: Page) {
 test('the home screen shows and opens every starting route on mobile', async ({ page }) => {
   await page.goto('/');
 
-  const createLink = page.getByRole('link', { name: /Create Start a new Drawmory/i });
-  const receiveLink = page.getByRole('link', { name: /Receive Continue a Drawmory/i });
+  const createLink = page.getByRole('link', { name: 'Create', exact: true });
+  const receiveLink = page.getByRole('link', { name: 'Receive', exact: true });
   const howLink = page.getByRole('link', { name: 'How it works', exact: true });
 
   await expect(createLink).toBeInViewport();
@@ -46,17 +46,19 @@ test('the home screen shows and opens every starting route on mobile', async ({ 
 
   await howLink.click();
   await expect(page).toHaveURL(/\/how-it-works$/);
-  await expect(page.getByRole('heading', { name: /One look\. One memory/i })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'How it works', exact: true })).toBeVisible();
 
   await page.goto('/');
-  await page.getByRole('link', { name: /Receive Continue a Drawmory/i }).click();
+  await page.getByRole('link', { name: 'Receive', exact: true }).click();
   await expect(page).toHaveURL(/\/receive$/);
-  await expect(page.getByRole('heading', { name: /Continue a Drawmory/i })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Receive', exact: true })).toBeVisible();
 
   await page.goto('/');
-  await page.getByRole('link', { name: /Create Start a new Drawmory/i }).click();
+  await page.getByRole('link', { name: 'Create', exact: true }).click();
   await expect(page).toHaveURL(/\/create$/);
-  await expect(page.getByRole('heading', { name: /Draw the first version/i })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Create', exact: true })).toBeVisible();
+  await expect(page.getByText('Draw the first version.')).toHaveCount(0);
+  await expect(page.getByText(/Keep it simple/i)).toHaveCount(0);
 });
 
 test('journey distance follows consecutive geolocated steps without bridging gaps', () => {
@@ -101,7 +103,7 @@ test('the language selector detects, persists and applies right-to-left language
   await expect(page.locator('html')).toHaveAttribute('lang', 'en-GB');
 
   await selector.selectOption('es');
-  await expect(page.getByRole('heading', { name: /Míralo.*Recuérdalo.*Redibújalo/i })).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Crear', exact: true })).toBeVisible();
   await expect(page.locator('html')).toHaveAttribute('lang', 'es-ES');
   await page.reload();
   await expect(selector).toHaveValue('es');
@@ -109,7 +111,7 @@ test('the language selector detects, persists and applies right-to-left language
 
   await selector.selectOption('ar');
   await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
-  await expect(page.getByRole('link', { name: /إنشاء.*Drawmory/i })).toBeVisible();
+  await expect(page.getByRole('link', { name: 'إنشاء', exact: true })).toBeVisible();
 });
 
 test('the drawing studio supports fill, shapes, undo and redo', async ({ page }) => {
@@ -152,7 +154,7 @@ test('a drawing travels through three anonymous carriers and reveals four frames
   let page = await context.newPage();
 
   await page.goto('/');
-  await page.getByRole('link', { name: /Create Start a new Drawmory/i }).click();
+  await page.getByRole('link', { name: 'Create', exact: true }).click();
   await addStroke(page);
   await expect(page.getByRole('button', { name: /Continue/i })).toBeEnabled();
   await page.getByRole('button', { name: /Continue/i }).click();
@@ -182,7 +184,8 @@ test('a drawing travels through three anonymous carriers and reveals four frames
       await expect(nextPage).toHaveURL(/\/pass\//);
     } else {
       await expect(nextPage).toHaveURL(/\/journey\//);
-      await expect(nextPage.getByRole('heading', { name: /See what the world remembered/i })).toBeVisible();
+      await expect(nextPage.getByRole('heading', { name: /^Drawmory #/i })).toBeVisible();
+      await expect(nextPage.getByText(/See what the world remembered/i)).toHaveCount(0);
       await expect(nextPage.locator('.timeline-strip button')).toHaveCount(5);
       await expect(nextPage.locator('.timeline-strip button').last()).toHaveAttribute('data-testid', 'journey-map-thumbnail');
       await nextPage.getByTestId('journey-map-thumbnail').click();
