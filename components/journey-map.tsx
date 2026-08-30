@@ -18,7 +18,15 @@ function labelForDrawing(drawing: LocatedDrawing, fallback: string) {
   return parts.join(', ') || fallback;
 }
 
-export function JourneyMap({ drawings, compact = false }: { drawings: LocatedDrawing[]; compact?: boolean }) {
+export function JourneyMap({
+  drawings,
+  compact = false,
+  preview = false,
+}: {
+  drawings: LocatedDrawing[];
+  compact?: boolean;
+  preview?: boolean;
+}) {
   const { t } = useLanguage();
   const mapElementRef = useRef<HTMLDivElement>(null);
   const located = useMemo(
@@ -36,9 +44,14 @@ export function JourneyMap({ drawings, compact = false }: { drawings: LocatedDra
       if (cancelled || !mapElementRef.current) return;
       const L = module.default;
       const map = L.map(mapElementRef.current, {
+        boxZoom: !preview,
+        doubleClickZoom: !preview,
+        dragging: !preview,
+        keyboard: !preview,
         scrollWheelZoom: false,
+        touchZoom: !preview,
         worldCopyJump: true,
-        zoomControl: true,
+        zoomControl: !preview,
       });
       L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
         maxZoom: 18,
@@ -48,9 +61,12 @@ export function JourneyMap({ drawings, compact = false }: { drawings: LocatedDra
       const points = located.map((drawing) => [drawing.latitude!, drawing.longitude!] as [number, number]);
       if (points.length > 1) {
         L.polyline(points, { color: '#7656d6', weight: 4, opacity: 0.82, dashArray: '7 8' }).addTo(map);
-        map.fitBounds(L.latLngBounds(points), { padding: [32, 32], maxZoom: 6 });
+        map.fitBounds(L.latLngBounds(points), {
+          padding: preview ? [12, 12] : [32, 32],
+          maxZoom: preview ? 4 : 6,
+        });
       } else {
-        map.setView(points[0], 3);
+        map.setView(points[0], preview ? 2 : 3);
       }
 
       located.forEach((drawing, index) => {
@@ -72,7 +88,7 @@ export function JourneyMap({ drawings, compact = false }: { drawings: LocatedDra
       cancelled = true;
       cleanup();
     };
-  }, [located, t]);
+  }, [located, preview, t]);
 
   const routeList = (
     <ol className="route-list">

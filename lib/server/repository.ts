@@ -1100,22 +1100,44 @@ export async function listPublicJourneys(options: {
   const distanceRows = options.sort === 'distance'
     ? await database
         .prepare(
-          `SELECT d.journey_id, d.step_index, d.latitude, d.longitude, d.location_precision
+          `SELECT d.id, d.journey_id, d.step_index, d.country_code, d.city,
+                  d.latitude, d.longitude, d.location_precision
            FROM drawings d
            JOIN journeys j ON j.id = d.journey_id
            WHERE j.flagged = 0 AND j.status != 'EXPIRED' ${statusClause}
            ORDER BY d.journey_id, d.step_index ASC`,
         )
-        .all<Pick<DrawingRow, 'journey_id' | 'step_index' | 'latitude' | 'longitude' | 'location_precision'>>()
+        .all<Pick<
+          DrawingRow,
+          | 'id'
+          | 'journey_id'
+          | 'step_index'
+          | 'country_code'
+          | 'city'
+          | 'latitude'
+          | 'longitude'
+          | 'location_precision'
+        >>()
     : await database
         .prepare(
-          `SELECT journey_id, step_index, latitude, longitude, location_precision
+          `SELECT id, journey_id, step_index, country_code, city,
+                  latitude, longitude, location_precision
            FROM drawings
            WHERE journey_id IN (${rows.results.map(() => '?').join(', ')})
            ORDER BY journey_id, step_index ASC`,
         )
         .bind(...rows.results.map((journey) => journey.id))
-        .all<Pick<DrawingRow, 'journey_id' | 'step_index' | 'latitude' | 'longitude' | 'location_precision'>>();
+        .all<Pick<
+          DrawingRow,
+          | 'id'
+          | 'journey_id'
+          | 'step_index'
+          | 'country_code'
+          | 'city'
+          | 'latitude'
+          | 'longitude'
+          | 'location_precision'
+        >>();
 
   const pointsByJourney = new Map<string, typeof distanceRows.results>();
   for (const point of distanceRows.results) {
@@ -1184,6 +1206,15 @@ export async function listPublicJourneys(options: {
   }
 
   return selectedRows.map((journey) => {
+    const routePoints = (pointsByJourney.get(journey.id) ?? []).map((drawing) => ({
+      id: drawing.id,
+      stepIndex: drawing.step_index,
+      countryCode: drawing.country_code,
+      city: drawing.city,
+      latitude: drawing.latitude,
+      longitude: drawing.longitude,
+      locationPrecision: drawing.location_precision,
+    }));
     const drawingPreviews = (previewsByJourney.get(journey.id) ?? []).map((drawing) => ({
       id: drawing.id,
       stepIndex: drawing.step_index,
@@ -1208,6 +1239,7 @@ export async function listPublicJourneys(options: {
       voteCount: Number(journey.vote_count),
       distanceKm: distance.distanceKm,
       distanceApproximate: distance.approximate,
+      routePoints,
       coverImageUrl:
         journey.current_drawing_id
           ? `/api/public/journeys/${encodeURIComponent(journey.public_slug)}/drawings/${encodeURIComponent(journey.current_drawing_id)}`

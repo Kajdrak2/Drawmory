@@ -195,6 +195,26 @@ test('a drawing travels through three anonymous carriers and reveals four frames
       await nextPage.getByLabel('Status').selectOption('completed');
       await nextPage.getByLabel('Sort').selectOption('newest');
       const library = nextPage.locator('.library-section');
+      const publicCard = library.locator('.journey-card').filter({
+        hasText: publicSlug.slice(0, 5).toUpperCase(),
+      });
+      await expect(publicCard).toBeVisible({ timeout: 15_000 });
+      await expect(publicCard.locator('.frame-counter')).toHaveText('1/5');
+      for (let index = 0; index < 4; index += 1) {
+        await publicCard.getByRole('button', { name: 'Next drawing' }).click();
+      }
+      await expect(publicCard.locator('.frame-counter')).toHaveText('5/5');
+      await expect(publicCard.getByTestId(`journey-card-map-${publicSlug}`)).toBeVisible();
+      await expect(publicCard.getByText('No location has been shared for this journey yet.')).toBeVisible();
+      const hallCard = nextPage.locator('.hall-section .journey-card').first();
+      await expect(hallCard).toBeVisible({ timeout: 15_000 });
+      const hallCounter = hallCard.locator('.frame-counter');
+      const [hallCurrent, hallTotal] = (await hallCounter.innerText()).split('/').map(Number);
+      for (let index = hallCurrent; index < hallTotal; index += 1) {
+        await hallCard.getByRole('button', { name: 'Next drawing' }).click();
+      }
+      await expect(hallCounter).toHaveText(`${hallTotal}/${hallTotal}`);
+      await expect(hallCard.locator('[data-testid^="journey-card-map-"]')).toBeVisible();
       const voteButton = library.getByTestId(`vote-${publicSlug}`);
       await expect(voteButton).toBeVisible({ timeout: 15_000 });
       await voteButton.click();
@@ -295,7 +315,14 @@ test('a world journey keeps travelling automatically, stays public, inherits loc
   await firstCarrier.getByLabel('Sort').selectOption('newest');
   const card = firstCarrier.locator('.library-section .journey-card').filter({ hasText: publicSlug.slice(0, 5).toUpperCase() });
   await expect(card).toBeVisible();
-  await expect(card.getByRole('button', { name: 'Next drawing' })).toBeVisible();
+  const nextPreview = card.getByRole('button', { name: 'Next drawing' });
+  await expect(nextPreview).toBeVisible();
+  await expect(card.locator('.frame-counter')).toHaveText('1/3');
+  await nextPreview.click();
+  await nextPreview.click();
+  await expect(card.locator('.frame-counter')).toHaveText('3/3');
+  await expect(card.getByTestId(`journey-card-map-${publicSlug}`)).toBeVisible();
+  await expect(card.locator('.journey-map-canvas')).toBeVisible();
   await expect(card.getByTestId(`vote-${publicSlug}`)).toBeVisible();
 
   const finalCarrierContext = await browser.newContext({ viewport: { width: 390, height: 844 } });

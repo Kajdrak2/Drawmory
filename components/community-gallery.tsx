@@ -8,6 +8,7 @@ import { DocumentLink } from './document-link';
 import { useLanguage } from './language-provider';
 import { getOrCreateVoterToken, readVotedJourneys, rememberVote } from '@/lib/client/voting';
 import { getLanguageOption } from '@/lib/i18n';
+import { JourneyMap } from './journey-map';
 
 type JourneyCardData = {
   publicSlug: string;
@@ -21,6 +22,15 @@ type JourneyCardData = {
   distanceKm: number | null;
   distanceApproximate: boolean;
   coverImageUrl: string | null;
+  routePoints: Array<{
+    id: string;
+    stepIndex: number;
+    countryCode: string;
+    city: string | null;
+    latitude: number | null;
+    longitude: number | null;
+    locationPrecision: 'NONE' | 'COUNTRY' | 'PRECISE';
+  }>;
   drawingPreviews: Array<{
     id: string;
     stepIndex: number;
@@ -147,14 +157,16 @@ export function CommunityGallery() {
     const completed = journey.status === 'COMPLETED';
     const voted = votedJourneys.has(journey.publicSlug);
     const previews = journey.drawingPreviews ?? [];
-    const activePreviewIndex = Math.min(previewIndexes[journey.publicSlug] ?? 0, Math.max(0, previews.length - 1));
-    const activePreview = previews[activePreviewIndex];
+    const previewSlideCount = previews.length + 1;
+    const mapPreviewIndex = previews.length;
+    const activePreviewIndex = Math.min(previewIndexes[journey.publicSlug] ?? 0, previewSlideCount - 1);
+    const isMapPreview = activePreviewIndex === mapPreviewIndex;
+    const activePreview = isMapPreview ? undefined : previews[activePreviewIndex];
     const previewImageUrl = activePreview?.imageUrl ?? journey.coverImageUrl;
     const movePreview = (direction: -1 | 1) => {
-      if (previews.length < 2) return;
       setPreviewIndexes((current) => ({
         ...current,
-        [journey.publicSlug]: (activePreviewIndex + direction + previews.length) % previews.length,
+        [journey.publicSlug]: (activePreviewIndex + direction + previewSlideCount) % previewSlideCount,
       }));
     };
     const progressWidth = journey.targetRedraws < 0
@@ -167,7 +179,11 @@ export function CommunityGallery() {
           <span className={`journey-status${completed ? ' completed' : ''}`}>
             {completed ? t('finished') : t('inProgress')}
           </span>
-          {previewImageUrl ? (
+          {isMapPreview ? (
+            <div className="journey-card-map" data-testid={`journey-card-map-${journey.publicSlug}`}>
+              <JourneyMap drawings={journey.routePoints ?? previews} compact preview />
+            </div>
+          ) : previewImageUrl ? (
             <img src={previewImageUrl} alt="" loading="lazy" />
           ) : (
             <div className="hidden-drawing" aria-hidden="true">
@@ -179,7 +195,7 @@ export function CommunityGallery() {
             href={`/journey/${encodeURIComponent(journey.publicSlug)}`}
             aria-label={t('openJourney')}
           />
-          {previews.length > 1 ? (
+          {previewSlideCount > 1 ? (
             <>
               <button
                 className="frame-arrow frame-arrow-previous"
@@ -195,9 +211,9 @@ export function CommunityGallery() {
               >→</button>
             </>
           ) : null}
-          {previews.length ? (
-            <span className="frame-counter" aria-live="polite">
-              {activePreviewIndex + 1}/{previews.length}
+          {previewSlideCount ? (
+            <span className="frame-counter" aria-live="polite" title={isMapPreview ? t('journeyMap') : undefined}>
+              {activePreviewIndex + 1}/{previewSlideCount}
             </span>
           ) : null}
         </div>

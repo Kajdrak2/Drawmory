@@ -492,6 +492,32 @@ html[dir='rtl'] .action-arrow {
   background: var(--white);
 }
 
+.journey-card-map,
+.journey-card-map .journey-map-layout,
+.journey-card-map .journey-map-canvas {
+  width: 100%;
+  height: 100%;
+}
+
+.journey-card-map {
+  background: #dfefff;
+}
+
+.journey-card-map .journey-map-canvas {
+  min-height: 0;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.journey-card-map .map-empty {
+  width: min(82%, 250px);
+  padding: 14px;
+  font-size: 0.7rem;
+  line-height: 1.35;
+  text-align: center;
+}
+
 .journey-cover-link {
   position: absolute;
   z-index: 1;
