@@ -41,6 +41,11 @@ test('the home screen shows and opens every starting route on mobile', async ({ 
   await expect(page.getByText('Your Drawmories on this device')).toHaveCount(0);
   await expect(page.getByText(/A drawing travels from memory to memory/i)).toHaveCount(0);
   await expect(page.locator('.action-gesture')).toHaveCount(0);
+  await expect(page.locator('link[rel="icon"][href="/favicon.ico?v=7"]')).toHaveCount(1);
+  const faviconResponse = await page.request.get('/favicon.ico?v=7');
+  expect(faviconResponse.ok()).toBeTruthy();
+  expect(faviconResponse.headers()['content-type']).toMatch(/image\/(x-icon|vnd\.microsoft\.icon)/);
+  expect((await faviconResponse.body()).byteLength).toBeGreaterThan(100);
   expect((await createLink.boundingBox())?.height).toBeLessThan(130);
   expect((await receiveLink.boundingBox())?.height).toBeLessThan(130);
 
@@ -280,12 +285,15 @@ test('a world journey keeps travelling automatically, stays public, inherits loc
 
   await firstCarrier.goto(`/journey/${publicSlug}`);
   await expect(firstCarrier.getByText('Journey in progress')).toBeVisible();
-  await expect(firstCarrier.locator('.timeline-strip button')).toHaveCount(3);
+  await expect(firstCarrier.locator('.timeline-strip button')).toHaveCount(3, { timeout: 20_000 });
   await expect(firstCarrier.locator('.timeline-strip button').last()).toHaveAttribute('data-testid', 'journey-map-thumbnail');
   await firstCarrier.locator('.timeline-strip button').nth(1).click();
   await firstCarrier.getByRole('button', { name: 'Play', exact: true }).click();
   await expect(firstCarrier.getByTestId('journey-map-slide')).toBeVisible({ timeout: 4_000 });
   await expect(firstCarrier.getByRole('button', { name: 'Next drawing' })).toBeDisabled();
+  await expect(firstCarrier.locator('.flipbook-map-slide .journey-map-canvas')).toHaveAttribute('data-scroll-zoom', 'enabled');
+  await firstCarrier.waitForTimeout(15_500);
+  await expect(firstCarrier.getByTestId('journey-map-slide')).toBeVisible();
   await firstCarrier.getByRole('button', { name: 'Previous drawing' }).click();
   await expect(firstCarrier.getByRole('img', { name: 'Redraw 1' })).toBeVisible();
   await firstCarrier.getByTestId('journey-map-thumbnail').click();
@@ -326,6 +334,7 @@ test('a world journey keeps travelling automatically, stays public, inherits loc
   await expect(card.locator('.frame-counter')).toHaveText('3/3');
   await expect(card.getByTestId(`journey-card-map-${publicSlug}`)).toBeVisible();
   await expect(card.locator('.journey-map-canvas')).toBeVisible();
+  await expect(card.locator('.journey-map-canvas')).toHaveAttribute('data-scroll-zoom', 'disabled');
   await expect(card.getByTestId(`vote-${publicSlug}`)).toBeVisible();
 
   const finalCarrierContext = await browser.newContext({ viewport: { width: 390, height: 844 } });

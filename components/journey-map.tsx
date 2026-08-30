@@ -48,7 +48,7 @@ export function JourneyMap({
         doubleClickZoom: !preview,
         dragging: !preview,
         keyboard: !preview,
-        scrollWheelZoom: false,
+        scrollWheelZoom: !preview,
         touchZoom: !preview,
         worldCopyJump: true,
         zoomControl: !preview,
@@ -131,7 +131,12 @@ export function JourneyMap({
 
   return (
     <div className={`journey-map-layout${compact ? ' journey-map-compact' : ''}`}>
-      <div className="journey-map-canvas" ref={mapElementRef} aria-label={t('journeyMap')} />
+      <div
+        className="journey-map-canvas"
+        ref={mapElementRef}
+        aria-label={t('journeyMap')}
+        data-scroll-zoom={preview ? 'disabled' : 'enabled'}
+      />
       {compact ? null : routeList}
     </div>
   );

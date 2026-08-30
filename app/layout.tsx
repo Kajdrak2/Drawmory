@@ -17,8 +17,12 @@ export async function generateMetadata(): Promise<Metadata> {
     title: BRAND.name,
     description: BRAND.description,
     icons: {
-      icon: [{ url: '/favicon.svg?v=6', type: 'image/svg+xml', sizes: 'any' }],
-      shortcut: '/favicon.svg?v=6',
+      icon: [
+        { url: '/favicon.ico?v=7', type: 'image/x-icon', sizes: 'any' },
+        { url: '/favicon-256.png?v=7', type: 'image/png', sizes: '256x256' },
+      ],
+      shortcut: '/favicon.ico?v=7',
+      apple: [{ url: '/apple-touch-icon.png?v=7', type: 'image/png', sizes: '180x180' }],
     },
     openGraph: {
       title: BRAND.name,

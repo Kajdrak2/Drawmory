@@ -2,7 +2,7 @@
 
 /* eslint-disable @next/next/no-img-element */
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { apiFetch } from '@/lib/client/api';
 import { getOrCreateVoterToken, readVotedJourneys, rememberVote } from '@/lib/client/voting';
 import { DocumentLink } from './document-link';
@@ -46,6 +46,7 @@ function durationLabel(start: number, end: number | null) {
 
 export function JourneyReveal({ publicSlug }: { publicSlug: string }) {
   const { t } = useLanguage();
+  const lastLoadedJourneyRef = useRef<PublicJourney | null>(null);
   const [journey, setJourney] = useState<PublicJourney | null>(null);
   const [activeIndex, setActiveIndex] = useState(0);
   const [playing, setPlaying] = useState(true);
@@ -60,8 +61,14 @@ export function JourneyReveal({ publicSlug }: { publicSlug: string }) {
       apiFetch<PublicJourney>(`/api/public/journeys/${encodeURIComponent(publicSlug)}`)
         .then((result) => {
           if (!active) return;
+          const previousMapIndex = lastLoadedJourneyRef.current?.drawings.length;
+          lastLoadedJourneyRef.current = result;
           setJourney(result);
-          setActiveIndex((current) => Math.min(current, Math.max(0, result.drawings.length - 1)));
+          setActiveIndex((current) =>
+            previousMapIndex !== undefined && current === previousMapIndex
+              ? result.drawings.length
+              : Math.min(current, Math.max(0, result.drawings.length - 1)),
+          );
         })
         .catch((caught) => {
           if (active) setError(caught instanceof Error ? caught.message : t('invalidLink'));
