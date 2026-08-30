@@ -18,7 +18,7 @@ function labelForDrawing(drawing: LocatedDrawing, fallback: string) {
   return parts.join(', ') || fallback;
 }
 
-export function JourneyMap({ drawings }: { drawings: LocatedDrawing[] }) {
+export function JourneyMap({ drawings, compact = false }: { drawings: LocatedDrawing[]; compact?: boolean }) {
   const { t } = useLanguage();
   const mapElementRef = useRef<HTMLDivElement>(null);
   const located = useMemo(
@@ -106,17 +106,17 @@ export function JourneyMap({ drawings }: { drawings: LocatedDrawing[] }) {
       (drawing) => drawing.city || drawing.countryCode !== 'UNKNOWN',
     );
     return (
-      <div className="journey-map-layout journey-map-without-canvas">
+      <div className={`journey-map-layout journey-map-without-canvas${compact ? ' journey-map-compact' : ''}`}>
         <p className="map-empty">{t('noLocationJourney')}</p>
-        {hasNamedLocation ? routeList : null}
+        {hasNamedLocation && !compact ? routeList : null}
       </div>
     );
   }
 
   return (
-    <div className="journey-map-layout">
+    <div className={`journey-map-layout${compact ? ' journey-map-compact' : ''}`}>
       <div className="journey-map-canvas" ref={mapElementRef} aria-label={t('journeyMap')} />
-      {routeList}
+      {compact ? null : routeList}
     </div>
   );
 }

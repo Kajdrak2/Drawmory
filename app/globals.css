@@ -2096,6 +2096,30 @@ select:focus-visible {
   animation: reveal-in 260ms ease-out;
 }
 
+.flipbook-map-slide {
+  overflow: hidden;
+  background: #dfefff;
+}
+
+.flipbook-map-slide .journey-map-layout,
+.flipbook-map-slide .journey-map-canvas {
+  width: 100%;
+  height: 100%;
+}
+
+.flipbook-map-slide .journey-map-canvas {
+  min-height: 0;
+  border: 0;
+  border-radius: 20px;
+  box-shadow: none;
+}
+
+.flipbook-map-slide .frame-label {
+  z-index: 500;
+  top: 26px;
+  bottom: auto;
+}
+
 @keyframes reveal-in {
   from { opacity: 0; transform: scale(0.985); }
 }
@@ -2198,6 +2222,34 @@ select:focus-visible {
   color: var(--white);
   font-size: 0.6rem;
   font-weight: 850;
+}
+
+.timeline-strip .timeline-map-button {
+  display: grid;
+  place-content: center;
+  gap: 7px;
+  padding: 12px;
+  background: #dfefff;
+  color: var(--ink);
+  text-align: center;
+}
+
+.timeline-map-button svg {
+  width: 58%;
+  margin: 0 auto;
+  overflow: visible;
+  fill: var(--yellow);
+  stroke: var(--ink);
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 4;
+}
+
+.timeline-map-button strong {
+  overflow: hidden;
+  font-size: 0.64rem;
+  line-height: 1.05;
+  text-overflow: ellipsis;
 }
 
 .reveal-actions {
@@ -2319,6 +2371,23 @@ select:focus-visible {
   display: grid;
   grid-template-columns: minmax(0, 1.7fr) minmax(230px, 0.8fr);
   gap: 17px;
+}
+
+.journey-map-compact {
+  display: block;
+  height: 100%;
+}
+
+.journey-map-compact.journey-map-without-canvas {
+  display: grid;
+  place-items: center;
+}
+
+.journey-map-compact .map-empty {
+  margin: 0;
+  border: 0;
+  background: rgb(255 255 255 / 88%);
+  box-shadow: none;
 }
 
 .journey-map-canvas {

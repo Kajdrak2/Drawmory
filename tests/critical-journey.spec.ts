@@ -183,7 +183,11 @@ test('a drawing travels through three anonymous carriers and reveals four frames
     } else {
       await expect(nextPage).toHaveURL(/\/journey\//);
       await expect(nextPage.getByRole('heading', { name: /See what the world remembered/i })).toBeVisible();
-      await expect(nextPage.locator('.timeline-strip button')).toHaveCount(4);
+      await expect(nextPage.locator('.timeline-strip button')).toHaveCount(5);
+      await expect(nextPage.locator('.timeline-strip button').last()).toHaveAttribute('data-testid', 'journey-map-thumbnail');
+      await nextPage.getByTestId('journey-map-thumbnail').click();
+      await expect(nextPage.getByTestId('journey-map-slide')).toBeVisible();
+      await expect(nextPage.getByText('No location has been shared for this journey yet.')).toBeVisible();
 
       const publicSlug = new URL(nextPage.url()).pathname.split('/').at(-1);
       if (!publicSlug) throw new Error('The completed journey has no public slug.');
@@ -253,11 +257,23 @@ test('a world journey keeps travelling automatically, stays public, inherits loc
 
   await firstCarrier.goto(`/journey/${publicSlug}`);
   await expect(firstCarrier.getByText('Journey in progress')).toBeVisible();
-  await expect(firstCarrier.locator('.timeline-strip button')).toHaveCount(2);
+  await expect(firstCarrier.locator('.timeline-strip button')).toHaveCount(3);
+  await expect(firstCarrier.locator('.timeline-strip button').last()).toHaveAttribute('data-testid', 'journey-map-thumbnail');
+  await firstCarrier.locator('.timeline-strip button').nth(1).click();
+  await firstCarrier.getByRole('button', { name: 'Play', exact: true }).click();
+  await expect(firstCarrier.getByTestId('journey-map-slide')).toBeVisible({ timeout: 4_000 });
+  await expect(firstCarrier.getByRole('button', { name: 'Next drawing' })).toBeDisabled();
+  await firstCarrier.getByRole('button', { name: 'Previous drawing' }).click();
+  await expect(firstCarrier.getByRole('img', { name: 'Redraw 1' })).toBeVisible();
+  await firstCarrier.getByTestId('journey-map-thumbnail').click();
+  await expect(firstCarrier.getByTestId('journey-map-slide')).toBeVisible();
+  await expect(firstCarrier.locator('.flipbook-map-slide .journey-map-canvas')).toBeVisible();
   await expect(firstCarrier.getByRole('button', { name: 'Mural' })).toBeVisible();
   await firstCarrier.getByRole('button', { name: 'Mural' }).click();
   await expect(firstCarrier.locator('.mural-grid figure')).toHaveCount(2);
   await expect(firstCarrier.getByTestId('journey-map-point')).toHaveCount(2);
+  await firstCarrier.getByRole('button', { name: 'Book' }).click();
+  await expect(firstCarrier.getByTestId('journey-map-slide')).toBeVisible();
   await firstCarrier.getByTestId('vote-public').click();
   await expect(firstCarrier.getByTestId('vote-public')).toContainText('Voted');
 
@@ -296,7 +312,8 @@ test('a world journey keeps travelling automatically, stays public, inherits loc
   await finalCarrier.getByRole('textbox', { name: 'City', exact: true }).fill('Madrid');
   await finalCarrier.getByTestId('save-location').click();
   await expect(finalCarrier).toHaveURL(new RegExp(`/journey/${publicSlug}$`));
-  await expect(finalCarrier.locator('.timeline-strip button')).toHaveCount(3);
+  await expect(finalCarrier.locator('.timeline-strip button')).toHaveCount(4);
+  await expect(finalCarrier.locator('.timeline-strip button').last()).toHaveAttribute('data-testid', 'journey-map-thumbnail');
 
   const completedResponse = await finalCarrier.request.get(`/api/public/journeys/${publicSlug}`);
   const completed = await completedResponse.json() as {

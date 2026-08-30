@@ -81,14 +81,19 @@ export function JourneyReveal({ publicSlug }: { publicSlug: string }) {
   }, [publicSlug]);
 
   useEffect(() => {
-    if (!playing || view !== 'book' || !journey || journey.drawings.length < 2) return;
-    const timer = window.setInterval(() => {
-      setActiveIndex((current) => (current + 1) % journey.drawings.length);
+    if (!playing || view !== 'book' || !journey || activeIndex >= journey.drawings.length) return;
+    const timer = window.setTimeout(() => {
+      const nextIndex = Math.min(activeIndex + 1, journey.drawings.length);
+      setActiveIndex(nextIndex);
+      if (nextIndex === journey.drawings.length) setPlaying(false);
     }, 1_700);
-    return () => window.clearInterval(timer);
-  }, [journey, playing, view]);
+    return () => window.clearTimeout(timer);
+  }, [activeIndex, journey, playing, view]);
 
-  const current = journey?.drawings[activeIndex];
+  const mapSlideIndex = journey?.drawings.length ?? 0;
+  const slideCount = mapSlideIndex + 1;
+  const isMapSlide = Boolean(journey) && activeIndex === mapSlideIndex;
+  const current = isMapSlide ? undefined : journey?.drawings[activeIndex];
   const shareUrl = typeof window !== 'undefined' ? window.location.href : '';
   const stats = useMemo(
     () =>
@@ -126,6 +131,15 @@ export function JourneyReveal({ publicSlug }: { publicSlug: string }) {
     } finally {
       setVoting(false);
     }
+  };
+
+  const togglePlayback = () => {
+    if (playing) {
+      setPlaying(false);
+      return;
+    }
+    if (isMapSlide) setActiveIndex(0);
+    setPlaying(true);
   };
 
   if (!journey && !error) {
@@ -173,17 +187,19 @@ export function JourneyReveal({ publicSlug }: { publicSlug: string }) {
 
         {view === 'book' ? (
           <div className="flipbook-stage">
-            <div className="flipbook-image">
-              {current ? (
+            <div className={`flipbook-image${isMapSlide ? ' flipbook-map-slide' : ''}`} data-testid={isMapSlide ? 'journey-map-slide' : undefined}>
+              {isMapSlide ? (
+                <JourneyMap drawings={journey.drawings} compact />
+              ) : current ? (
                 <img key={current.id} src={current.imageUrl} alt={current.stepIndex === 0 ? t('original') : t('redraw', { step: current.stepIndex })} />
               ) : null}
-              <span className="frame-label">{current?.stepIndex === 0 ? t('original') : t('redraw', { step: current?.stepIndex ?? 0 })}</span>
-              <span className="country-label">{locationLabel || t('notSpecified')}</span>
+              <span className="frame-label">{isMapSlide ? t('journeyMap') : current?.stepIndex === 0 ? t('original') : t('redraw', { step: current?.stepIndex ?? 0 })}</span>
+              {isMapSlide ? null : <span className="country-label">{locationLabel || t('notSpecified')}</span>}
             </div>
             <div className="flipbook-controls">
-              <button className="secondary-button icon-button" type="button" aria-label={t('previousDrawing')} onClick={() => { setActiveIndex((index) => (index - 1 + journey.drawings.length) % journey.drawings.length); setPlaying(false); }} disabled={journey.drawings.length < 2}>←</button>
-              <button className="secondary-button" type="button" onClick={() => setPlaying((value) => !value)} disabled={journey.drawings.length < 2}>{playing ? t('pause') : t('play')}</button>
-              <button className="secondary-button icon-button" type="button" aria-label={t('nextDrawing')} onClick={() => { setActiveIndex((index) => (index + 1) % journey.drawings.length); setPlaying(false); }} disabled={journey.drawings.length < 2}>→</button>
+              <button className="secondary-button icon-button" type="button" aria-label={t('previousDrawing')} onClick={() => { setActiveIndex((index) => Math.max(0, index - 1)); setPlaying(false); }} disabled={activeIndex === 0}>←</button>
+              <button className="secondary-button" type="button" onClick={togglePlayback}>{playing ? t('pause') : t('play')}</button>
+              <button className="secondary-button icon-button" type="button" aria-label={t('nextDrawing')} onClick={() => { setActiveIndex((index) => Math.min(slideCount - 1, index + 1)); setPlaying(false); }} disabled={activeIndex === slideCount - 1}>→</button>
               <button className="secondary-button" type="button" onClick={() => { setActiveIndex(0); setPlaying(true); }}>{t('replay')}</button>
             </div>
           </div>
@@ -208,12 +224,21 @@ export function JourneyReveal({ publicSlug }: { publicSlug: string }) {
               <img src={drawing.imageUrl} alt="" /><span>{drawing.stepIndex}</span>
             </button>
           ))}
+          <button type="button" className={`timeline-map-button${isMapSlide ? ' active' : ''}`} onClick={() => { setActiveIndex(mapSlideIndex); setPlaying(false); setView('book'); }} aria-label={t('journeyMap')} data-testid="journey-map-thumbnail">
+            <svg viewBox="0 0 64 64" aria-hidden="true">
+              <path d="M8 45c10-21 20-22 29-8s13 8 19-16" />
+              <circle cx="8" cy="45" r="5" />
+              <circle cx="37" cy="37" r="5" />
+              <circle cx="56" cy="21" r="5" />
+            </svg>
+            <strong>{t('journeyMap')}</strong>
+          </button>
         </div>
 
-        <section className="journey-map-section">
+        {view === 'mural' ? <section className="journey-map-section">
           <div className="map-heading"><p className="section-kicker">{t('journeyMap')}</p><h2>{t('journeyMap')}</h2></div>
           <JourneyMap drawings={journey.drawings} />
-        </section>
+        </section> : null}
 
         <div className="reveal-actions">
           <button className={`vote-button reveal-vote${voted ? ' voted' : ''}`} type="button" onClick={vote} disabled={voted || voting} data-testid="vote-public">
