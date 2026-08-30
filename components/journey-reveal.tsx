@@ -122,7 +122,7 @@ export function JourneyReveal({ publicSlug }: { publicSlug: string }) {
       rememberVote(publicSlug);
       setVoted(true);
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : 'The vote could not be saved.');
+      setError(caught instanceof Error ? caught.message : t('voteSaveFailed'));
     } finally {
       setVoting(false);
     }
@@ -202,7 +202,7 @@ export function JourneyReveal({ publicSlug }: { publicSlug: string }) {
           {stats.map((stat) => <div key={stat.label}><strong>{stat.value}</strong><span>{stat.label}</span></div>)}
         </div>
 
-        <div className="timeline-strip" aria-label="Journey drawings">
+        <div className="timeline-strip" aria-label={t('drawingHidden')}>
           {journey.drawings.map((drawing, index) => (
             <button key={drawing.id} type="button" className={index === activeIndex ? 'active' : ''} onClick={() => { setActiveIndex(index); setPlaying(false); setView('book'); }} aria-label={drawing.stepIndex === 0 ? t('original') : t('redraw', { step: drawing.stepIndex })}>
               <img src={drawing.imageUrl} alt="" /><span>{drawing.stepIndex}</span>
@@ -211,7 +211,7 @@ export function JourneyReveal({ publicSlug }: { publicSlug: string }) {
         </div>
 
         <section className="journey-map-section">
-          <div className="map-heading"><p className="section-kicker">Route</p><h2>{t('journeyMap')}</h2></div>
+          <div className="map-heading"><p className="section-kicker">{t('journeyMap')}</p><h2>{t('journeyMap')}</h2></div>
           <JourneyMap drawings={journey.drawings} />
         </section>
 

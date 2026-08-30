@@ -1,13 +1,14 @@
-export const translations = {
+import { extraTranslations } from './i18n-extra';
+
+const baseTranslations = {
   en: {
     howItWorks: 'How it works',
     language: 'FR',
+    selectLanguage: 'Language',
     eyebrow: 'A drawing remembered by the world',
     taglineLead: 'See it.',
     taglineAccent: 'Remember it.',
     taglineTail: 'Redraw it. Pass it on.',
-    homeLede:
-      'A drawing travels from memory to memory. Watch it once, redraw what remains, then send the new version onward.',
     create: 'Create',
     createSubtitle: 'Start a new Drawmory',
     receive: 'Receive',
@@ -142,6 +143,7 @@ export const translations = {
     oldestSort: 'Oldest',
     progressSort: 'Most advanced',
     votesSort: 'Most voted',
+    distanceSort: 'Greatest distance',
     refreshRandom: 'Shuffle',
     previousCards: 'Previous Drawmories',
     nextCards: 'Next Drawmories',
@@ -156,6 +158,14 @@ export const translations = {
     voteCount: '{count} votes',
     openJourney: 'Open this Drawmory',
     galleryLoading: 'Loading Drawmories…',
+    community: 'Community',
+    communityPicks: 'Community picks',
+    distanceTravelled: '{distance} km travelled',
+    distanceTravelledApproximate: 'About {distance} km travelled',
+    distanceUnknown: 'Distance unknown',
+    libraryLoadFailed: 'The library could not be loaded.',
+    hallLoadFailed: 'The Hall of Fame could not be loaded.',
+    voteSaveFailed: 'The vote could not be saved.',
     optional: 'Optional',
     whereDrawing: 'Where was this drawing made?',
     locationPrivacy: 'Nothing is recorded unless you choose a country, city, or precise position.',
@@ -194,12 +204,11 @@ export const translations = {
   fr: {
     howItWorks: 'Comment ça marche',
     language: 'EN',
+    selectLanguage: 'Langue',
     eyebrow: 'Un dessin dont le monde se souvient',
     taglineLead: 'Regarde.',
     taglineAccent: 'Mémorise.',
     taglineTail: 'Redessine. Transmets.',
-    homeLede:
-      'Un dessin voyage de mémoire en mémoire. Regarde-le une fois, redessine ce qu’il en reste, puis transmets ta version.',
     create: 'Créer',
     createSubtitle: 'Lancer une nouvelle Drawmory',
     receive: 'Recevoir',
@@ -334,6 +343,7 @@ export const translations = {
     oldestSort: 'Plus anciens',
     progressSort: 'Plus avancés',
     votesSort: 'Plus votés',
+    distanceSort: 'Plus grande distance',
     refreshRandom: 'Mélanger',
     previousCards: 'Drawmories précédentes',
     nextCards: 'Drawmories suivantes',
@@ -348,6 +358,14 @@ export const translations = {
     voteCount: '{count} votes',
     openJourney: 'Ouvrir cette Drawmory',
     galleryLoading: 'Chargement des Drawmories…',
+    community: 'Communauté',
+    communityPicks: 'Choix de la communauté',
+    distanceTravelled: '{distance} km parcourus',
+    distanceTravelledApproximate: 'Environ {distance} km parcourus',
+    distanceUnknown: 'Distance inconnue',
+    libraryLoadFailed: 'La bibliothèque n’a pas pu être chargée.',
+    hallLoadFailed: 'Le Hall of Fame n’a pas pu être chargé.',
+    voteSaveFailed: 'Le vote n’a pas pu être enregistré.',
     optional: 'Facultatif',
     whereDrawing: 'Où ce dessin a-t-il été réalisé ?',
     locationPrivacy: 'Rien n’est enregistré sans choix de pays, ville ou position précise.',
@@ -385,5 +403,48 @@ export const translations = {
   },
 } as const;
 
-export type Language = keyof typeof translations;
-export type TranslationKey = keyof (typeof translations)['en'];
+export const languageOptions = [
+  { code: 'en', locale: 'en-GB', label: 'English', direction: 'ltr' },
+  { code: 'fr', locale: 'fr-FR', label: 'Français', direction: 'ltr' },
+  { code: 'es', locale: 'es-ES', label: 'Español', direction: 'ltr' },
+  { code: 'de', locale: 'de-DE', label: 'Deutsch', direction: 'ltr' },
+  { code: 'pt-BR', locale: 'pt-BR', label: 'Português (Brasil)', direction: 'ltr' },
+  { code: 'tr', locale: 'tr-TR', label: 'Türkçe', direction: 'ltr' },
+  { code: 'ar', locale: 'ar', label: 'العربية', direction: 'rtl' },
+  { code: 'ja', locale: 'ja-JP', label: '日本語', direction: 'ltr' },
+  { code: 'ko', locale: 'ko-KR', label: '한국어', direction: 'ltr' },
+  { code: 'zh-CN', locale: 'zh-CN', label: '简体中文', direction: 'ltr' },
+] as const;
+
+export type Language = (typeof languageOptions)[number]['code'];
+export type TranslationKey = keyof (typeof baseTranslations)['en'];
+type Dictionary = Record<TranslationKey, string>;
+
+export const translations = Object.fromEntries(
+  languageOptions.map(({ code }) => {
+    const translated = code === 'en' || code === 'fr' ? baseTranslations[code] : extraTranslations[code];
+    return [code, { ...baseTranslations.en, ...translated }];
+  }),
+) as Record<Language, Dictionary>;
+
+export function isLanguage(value: string | null): value is Language {
+  return languageOptions.some((option) => option.code === value);
+}
+
+export function getLanguageOption(language: Language) {
+  return languageOptions.find((option) => option.code === language) ?? languageOptions[0];
+}
+
+export function findSupportedLanguage(preferences: readonly string[]) {
+  for (const preference of preferences) {
+    const normalized = preference.toLowerCase();
+    const exact = languageOptions.find((option) => option.locale.toLowerCase() === normalized);
+    if (exact) return exact.code;
+    if (normalized.startsWith('zh')) return 'zh-CN';
+    if (normalized.startsWith('pt')) return 'pt-BR';
+    const base = normalized.split('-')[0];
+    const match = languageOptions.find((option) => option.code.toLowerCase().split('-')[0] === base);
+    if (match) return match.code;
+  }
+  return 'en';
+}

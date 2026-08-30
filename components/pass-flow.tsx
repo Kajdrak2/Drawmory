@@ -87,7 +87,7 @@ export function PassFlow({ journeyId }: { journeyId: string }) {
     return (
       <main className="app-shell">
         <SiteHeader compact />
-        <section className="center-card"><div className="loading-orbit" aria-label="Loading" /></section>
+        <section className="center-card"><div className="loading-orbit" aria-label={t('galleryLoading')} /></section>
       </main>
     );
   }
@@ -110,7 +110,7 @@ export function PassFlow({ journeyId }: { journeyId: string }) {
       <SiteHeader compact />
       <section className="flow-shell pass-shell">
         <div className="flow-heading">
-          <span className="flow-kicker">Pass · 03</span>
+          <span className="flow-kicker">{t('passTitle')} · 03</span>
           <h1>{result ? t('waiting') : t('passTitle')}</h1>
           <p>{result ? t('saveLink') : t('privacyTail')}</p>
         </div>
@@ -144,7 +144,7 @@ export function PassFlow({ journeyId }: { journeyId: string }) {
           <div className="share-panel">
             {qrCode ? <img className="qr-code" src={qrCode} alt="Drawmory handoff QR code" /> : null}
             <div className="share-details">
-              <p className="manual-code-label">Manual code</p>
+              <p className="manual-code-label">{t('enterCode')}</p>
               <strong className="manual-code" data-testid="manual-code">{result.code}</strong>
               <p className="secret-link">{handoffUrl}</p>
               <div className="button-row">

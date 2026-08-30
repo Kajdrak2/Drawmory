@@ -42,7 +42,7 @@ export function HandoffFlow({ token }: { token: string }) {
     <main className="app-shell">
       <SiteHeader compact />
       <section className="flow-shell narrow-shell">
-        {loading ? <div className="loading-orbit" aria-label="Loading" /> : null}
+        {loading ? <div className="loading-orbit" aria-label={t('galleryLoading')} /> : null}
         {preview ? <OfferPanel preview={preview} busy={busy} onCarry={claim} /> : null}
         {error ? (
           <section className="center-card">

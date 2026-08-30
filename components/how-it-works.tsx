@@ -12,7 +12,7 @@ export function HowItWorks() {
       <SiteHeader compact />
       <section className="how-shell">
         <div className="flow-heading">
-          <span className="flow-kicker">How it works</span>
+          <span className="flow-kicker">{t('howItWorks')}</span>
           <h1>{t('howTitle')}</h1>
           <p>{t('howBody')}</p>
         </div>

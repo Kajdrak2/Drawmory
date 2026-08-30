@@ -1,12 +1,18 @@
 'use client';
 
 import { createContext, useContext, useEffect, useMemo, useState } from 'react';
-import { Language, TranslationKey, translations } from '@/lib/i18n';
+import {
+  findSupportedLanguage,
+  getLanguageOption,
+  isLanguage,
+  Language,
+  TranslationKey,
+  translations,
+} from '@/lib/i18n';
 
 type LanguageContextValue = {
   language: Language;
   setLanguage: (language: Language) => void;
-  toggleLanguage: () => void;
   t: (key: TranslationKey, values?: Record<string, string | number>) => string;
 };
 
@@ -18,14 +24,20 @@ export function LanguageProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const timer = window.setTimeout(() => {
       const saved = window.localStorage.getItem('drawmoryLanguage');
-      if (saved === 'fr') setLanguageState('fr');
+      const detected = isLanguage(saved) ? saved : findSupportedLanguage(window.navigator.languages);
+      const option = getLanguageOption(detected);
+      setLanguageState(detected);
+      document.documentElement.lang = option.locale;
+      document.documentElement.dir = option.direction;
     }, 0);
     return () => window.clearTimeout(timer);
   }, []);
 
   const setLanguage = (next: Language) => {
+    const option = getLanguageOption(next);
     setLanguageState(next);
-    document.documentElement.lang = next;
+    document.documentElement.lang = option.locale;
+    document.documentElement.dir = option.direction;
     window.localStorage.setItem('drawmoryLanguage', next);
   };
 
@@ -33,11 +45,10 @@ export function LanguageProvider({ children }: { children: React.ReactNode }) {
     () => ({
       language,
       setLanguage,
-      toggleLanguage: () => setLanguage(language === 'en' ? 'fr' : 'en'),
       t: (key, values) => {
-        let text: string = translations[language][key];
+        let text = translations[language]?.[key] ?? translations.en[key] ?? key;
         for (const [name, replacement] of Object.entries(values ?? {})) {
-          text = text.replace(`{${name}}`, String(replacement));
+          text = text.split(`{${name}}`).join(String(replacement));
         }
         return text;
       },

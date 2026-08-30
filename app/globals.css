@@ -124,15 +124,30 @@ a {
   border-bottom: 1px solid rgb(29 24 48 / 32%);
 }
 
-.language-pill {
+.language-picker {
   display: inline-grid;
-  min-width: 38px;
+}
+
+.language-select {
+  max-width: 148px;
   height: 32px;
-  place-items: center;
+  padding: 0 28px 0 11px;
   border: 1.5px solid var(--ink);
   border-radius: 999px;
   background: var(--white);
+  color: var(--ink);
   box-shadow: 2px 2px 0 var(--ink);
+  font: inherit;
+  cursor: pointer;
+}
+
+html[dir='rtl'] body {
+  text-align: right;
+}
+
+html[dir='rtl'] .action-arrow {
+  right: auto;
+  left: 23px;
 }
 
 .home-start {
@@ -156,10 +171,7 @@ a {
 }
 
 .home-intro {
-  display: grid;
-  grid-template-columns: minmax(0, 1.08fr) minmax(280px, 0.92fr);
-  gap: clamp(24px, 5vw, 72px);
-  align-items: end;
+  max-width: 760px;
 }
 
 .home-intro h1 {
@@ -176,14 +188,6 @@ a {
   font-style: italic;
 }
 
-.home-intro p {
-  max-width: 520px;
-  margin: 0;
-  font-size: clamp(0.94rem, 1.35vw, 1.05rem);
-  line-height: 1.5;
-  color: rgb(29 24 48 / 72%);
-}
-
 .action-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -194,8 +198,8 @@ a {
 .action-card {
   position: relative;
   display: grid;
-  min-height: 184px;
-  padding: 22px;
+  min-height: 158px;
+  padding: 20px 22px;
   overflow: hidden;
   border: 2px solid var(--ink);
   border-radius: 26px;
@@ -251,14 +255,6 @@ a {
   font-size: 1.3rem;
 }
 
-.action-gesture {
-  position: absolute;
-  right: 78px;
-  top: 25px;
-  width: 72px;
-  height: 72px;
-}
-
 .how-shortcut {
   display: grid;
   grid-template-columns: auto 1fr auto;
@@ -307,51 +303,6 @@ a {
 .shortcut-arrow {
   font-size: 1.15rem;
   font-weight: 850;
-}
-
-.action-gesture-draw {
-  border: 4px solid var(--ink);
-  border-color: var(--ink) transparent var(--ink) var(--ink);
-  border-radius: 44% 56% 50% 45%;
-  transform: rotate(24deg);
-}
-
-.action-gesture-draw::after {
-  content: '';
-  position: absolute;
-  right: -12px;
-  bottom: -6px;
-  width: 38px;
-  height: 7px;
-  border-radius: 999px;
-  background: var(--ink);
-  transform: rotate(38deg);
-}
-
-.action-gesture-receive {
-  display: grid;
-  place-items: center;
-  border: 4px solid var(--ink);
-  border-radius: 50%;
-}
-
-.action-gesture-receive::before,
-.action-gesture-receive::after,
-.action-gesture-receive span {
-  content: '';
-  position: absolute;
-  width: 22px;
-  height: 4px;
-  border-radius: 999px;
-  background: var(--ink);
-}
-
-.action-gesture-receive::before {
-  transform: translateY(-10px);
-}
-
-.action-gesture-receive::after {
-  transform: translateY(10px);
 }
 
 .landing-footer {
@@ -678,6 +629,15 @@ a {
   font-weight: 720;
 }
 
+.journey-card-copy > .journey-distance {
+  width: fit-content;
+  padding: 3px 7px;
+  border-radius: 999px;
+  background: var(--mint);
+  color: var(--ink);
+  font-weight: 820;
+}
+
 .journey-card-copy > p {
   margin: 0;
   color: rgb(29 24 48 / 62%);
@@ -844,25 +804,25 @@ a {
     font-size: 0.71rem;
   }
 
+  .language-select {
+    max-width: 112px;
+    padding-left: 8px;
+    font-size: 0.68rem;
+  }
+
   .home-start {
     width: min(100% - 28px, 1060px);
     padding-top: 13px;
   }
 
   .home-intro {
-    grid-template-columns: 1fr;
-    gap: 9px;
+    max-width: 100%;
   }
 
   .home-intro h1 {
     max-width: 345px;
     font-size: clamp(1.65rem, 8vw, 2.25rem);
     line-height: 1.03;
-  }
-
-  .home-intro p {
-    font-size: 0.88rem;
-    line-height: 1.42;
   }
 
   .action-grid {
@@ -872,7 +832,7 @@ a {
   }
 
   .action-card {
-    min-height: 134px;
+    min-height: 116px;
     padding: 17px;
     border-radius: 19px;
     box-shadow: 5px 5px 0 var(--ink);
@@ -894,14 +854,9 @@ a {
     height: 36px;
   }
 
-  .action-gesture {
-    right: 66px;
-    top: 14px;
-    transform: scale(0.68) rotate(24deg);
-  }
-
-  .action-gesture-receive {
-    transform: scale(0.68);
+  html[dir='rtl'] .action-arrow {
+    right: auto;
+    left: 17px;
   }
 
   .how-shortcut {

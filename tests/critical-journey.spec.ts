@@ -1,4 +1,7 @@
 import { expect, test, type BrowserContext, type Page } from '@playwright/test';
+import { haversineDistanceKm, measureJourney } from '../lib/journey-distance';
+import { extraTranslations } from '../lib/i18n-extra';
+import { languageOptions, translations } from '../lib/i18n';
 
 async function addStroke(page: Page) {
   const canvas = page.getByTestId('drawing-canvas');
@@ -36,6 +39,10 @@ test('the home screen shows and opens every starting route on mobile', async ({ 
   await expect(page.getByRole('heading', { name: 'Hall of Fame' })).toBeVisible();
   await expect(page.getByText('No account. No login. No email.')).toHaveCount(0);
   await expect(page.getByText('Your Drawmories on this device')).toHaveCount(0);
+  await expect(page.getByText(/A drawing travels from memory to memory/i)).toHaveCount(0);
+  await expect(page.locator('.action-gesture')).toHaveCount(0);
+  expect((await createLink.boundingBox())?.height).toBeLessThan(130);
+  expect((await receiveLink.boundingBox())?.height).toBeLessThan(130);
 
   await howLink.click();
   await expect(page).toHaveURL(/\/how-it-works$/);
@@ -50,6 +57,59 @@ test('the home screen shows and opens every starting route on mobile', async ({ 
   await page.getByRole('link', { name: /Create Start a new Drawmory/i }).click();
   await expect(page).toHaveURL(/\/create$/);
   await expect(page.getByRole('heading', { name: /Draw the first version/i })).toBeVisible();
+});
+
+test('journey distance follows consecutive geolocated steps without bridging gaps', () => {
+  const acrossAntimeridian = haversineDistanceKm(
+    { latitude: 0, longitude: 179 },
+    { latitude: 0, longitude: -179 },
+  );
+  expect(acrossAntimeridian).not.toBeNull();
+  expect(acrossAntimeridian!).toBeGreaterThan(220);
+  expect(acrossAntimeridian!).toBeLessThan(225);
+
+  const measured = measureJourney([
+    { latitude: 48.8566, longitude: 2.3522, locationPrecision: 'PRECISE' },
+    { latitude: 48.8566, longitude: 2.3522, locationPrecision: 'PRECISE' },
+    { latitude: null, longitude: null, locationPrecision: 'NONE' },
+    { latitude: 40.4168, longitude: -3.7038, locationPrecision: 'COUNTRY' },
+  ]);
+  expect(measured.distanceKm).toBe(0);
+  expect(measured.approximate).toBe(false);
+  expect(measureJourney([{ latitude: 48, longitude: 2 }]).distanceKm).toBeNull();
+});
+
+test('all selectable languages have a complete placeholder-safe catalogue', () => {
+  const englishKeys = Object.keys(translations.en);
+  for (const option of languageOptions) {
+    if (option.code === 'en' || option.code === 'fr') continue;
+    const catalogue = extraTranslations[option.code];
+    const missing = englishKeys.filter((key) => !(key in catalogue));
+    expect(missing, `${option.code} is missing translated messages`).toEqual([]);
+    for (const key of englishKeys) {
+      const placeholders = (translations.en[key as keyof typeof translations.en].match(/\{[^}]+\}/g) ?? []).sort();
+      const translatedPlaceholders = (catalogue[key].match(/\{[^}]+\}/g) ?? []).sort();
+      expect(translatedPlaceholders, `${option.code}.${key} changed placeholders`).toEqual(placeholders);
+    }
+  }
+});
+
+test('the language selector detects, persists and applies right-to-left languages', async ({ page }) => {
+  await page.goto('/');
+  const selector = page.locator('.language-select');
+  await expect(selector.locator('option')).toHaveCount(10);
+  await expect(page.locator('html')).toHaveAttribute('lang', 'en-GB');
+
+  await selector.selectOption('es');
+  await expect(page.getByRole('heading', { name: /Míralo.*Recuérdalo.*Redibújalo/i })).toBeVisible();
+  await expect(page.locator('html')).toHaveAttribute('lang', 'es-ES');
+  await page.reload();
+  await expect(selector).toHaveValue('es');
+  await expect(selector).toHaveAttribute('aria-label', 'Idioma');
+
+  await selector.selectOption('ar');
+  await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
+  await expect(page.getByRole('link', { name: /إنشاء.*Drawmory/i })).toBeVisible();
 });
 
 test('the drawing studio supports fill, shapes, undo and redo', async ({ page }) => {
@@ -247,6 +307,23 @@ test('a world journey keeps travelling automatically, stays public, inherits loc
   expect(completed.drawings).toHaveLength(3);
   expect(completed.drawings.slice(0, 2).every((drawing) => drawing.city === 'Paris')).toBeTruthy();
   expect(completed.drawings[2]).toMatchObject({ countryCode: 'ES', city: 'Madrid' });
+
+  const distanceResponse = await finalCarrier.request.get('/api/public/journeys?status=all&sort=distance&limit=24');
+  expect(distanceResponse.ok()).toBeTruthy();
+  const distanceList = await distanceResponse.json() as {
+    items: Array<{ publicSlug: string; distanceKm: number | null; distanceApproximate: boolean }>;
+  };
+  expect(distanceList.items[0]?.publicSlug).toBe(publicSlug);
+  expect(distanceList.items[0]?.distanceKm).toBeGreaterThan(500);
+  expect(distanceList.items[0]?.distanceApproximate).toBe(true);
+
+  await finalCarrier.goto('/');
+  await finalCarrier.getByLabel('Sort').selectOption('distance');
+  const distanceCard = finalCarrier.locator('.library-section .journey-card').filter({
+    hasText: publicSlug.slice(0, 5).toUpperCase(),
+  });
+  await expect(distanceCard).toBeVisible();
+  await expect(distanceCard.locator('.journey-distance')).toContainText('km');
 
   await creatorContext.close();
   await firstCarrierContext.close();

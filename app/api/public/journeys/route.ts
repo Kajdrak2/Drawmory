@@ -4,7 +4,7 @@ import { listPublicJourneys } from '@/lib/server/repository';
 
 const listSchema = z.object({
   status: z.enum(['all', 'completed', 'in_progress']).default('all'),
-  sort: z.enum(['random', 'newest', 'oldest', 'progress', 'votes']).default('random'),
+  sort: z.enum(['random', 'newest', 'oldest', 'progress', 'votes', 'distance']).default('random'),
   limit: z.coerce.number().int().min(1).max(24).default(12),
 });
 

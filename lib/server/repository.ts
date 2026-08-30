@@ -4,6 +4,7 @@ import { validateDataImage } from './image';
 import { normalizeDrawingLocation } from './location';
 import { hashToken, normalizeCode, randomCode, randomId, randomSlug, randomToken } from './tokens';
 import type { DrawingLocationInput, JourneyLocation } from '@/lib/location';
+import { measureJourney } from '@/lib/journey-distance';
 
 export type JourneyStatus =
   | 'AWAITING_HANDOFF'
@@ -73,7 +74,7 @@ type DrawingRow = {
 };
 
 export type PublicJourneyFilter = 'all' | 'completed' | 'in_progress';
-export type PublicJourneySort = 'random' | 'newest' | 'oldest' | 'progress' | 'votes';
+export type PublicJourneySort = 'random' | 'newest' | 'oldest' | 'progress' | 'votes' | 'distance';
 
 export class HttpError extends Error {
   constructor(
@@ -1062,38 +1063,94 @@ export async function listPublicJourneys(options: {
     progress:
       'CAST(j.redraw_count AS REAL) / CASE WHEN j.target_redraws < 0 THEN j.redraw_count + 1 WHEN j.target_redraws = 0 THEN 1 ELSE j.target_redraws END DESC, j.updated_at DESC',
     votes: 'vote_count DESC, j.completed_at DESC, j.created_at DESC',
+    distance: 'j.updated_at DESC',
   };
 
-  const rows = await getDatabase()
-    .prepare(
-      `SELECT j.id, j.public_slug, j.status, j.target_redraws, j.redraw_count,
-              j.created_at, j.updated_at, j.completed_at, j.current_drawing_id,
-              COUNT(v.id) AS vote_count
-       FROM journeys j
-       LEFT JOIN journey_votes v ON v.journey_id = j.id
-       WHERE j.flagged = 0 AND j.status != 'EXPIRED' ${statusClause}
-       GROUP BY j.id
-       ORDER BY ${orderClause[options.sort]}
-       LIMIT ?`,
-    )
-    .bind(options.limit)
-    .all<{
-      public_slug: string;
-      id: string;
-      status: JourneyStatus;
-      target_redraws: number;
-      redraw_count: number;
-      created_at: number;
-      updated_at: number;
-      completed_at: number | null;
-      current_drawing_id: string | null;
-      vote_count: number;
-    }>();
+  type ListRow = {
+    public_slug: string;
+    id: string;
+    status: JourneyStatus;
+    target_redraws: number;
+    redraw_count: number;
+    created_at: number;
+    updated_at: number;
+    completed_at: number | null;
+    current_drawing_id: string | null;
+    vote_count: number;
+  };
+
+  const database = getDatabase();
+  const listStatement = database.prepare(
+    `SELECT j.id, j.public_slug, j.status, j.target_redraws, j.redraw_count,
+            j.created_at, j.updated_at, j.completed_at, j.current_drawing_id,
+            COUNT(v.id) AS vote_count
+     FROM journeys j
+     LEFT JOIN journey_votes v ON v.journey_id = j.id
+     WHERE j.flagged = 0 AND j.status != 'EXPIRED' ${statusClause}
+     GROUP BY j.id
+     ORDER BY ${orderClause[options.sort]}
+     ${options.sort === 'distance' ? '' : 'LIMIT ?'}`,
+  );
+  const rows = options.sort === 'distance'
+    ? await listStatement.all<ListRow>()
+    : await listStatement.bind(options.limit).all<ListRow>();
 
   if (rows.results.length === 0) return [];
 
-  const placeholders = rows.results.map(() => '?').join(', ');
-  const previewRows = await getDatabase()
+  const distanceRows = options.sort === 'distance'
+    ? await database
+        .prepare(
+          `SELECT d.journey_id, d.step_index, d.latitude, d.longitude, d.location_precision
+           FROM drawings d
+           JOIN journeys j ON j.id = d.journey_id
+           WHERE j.flagged = 0 AND j.status != 'EXPIRED' ${statusClause}
+           ORDER BY d.journey_id, d.step_index ASC`,
+        )
+        .all<Pick<DrawingRow, 'journey_id' | 'step_index' | 'latitude' | 'longitude' | 'location_precision'>>()
+    : await database
+        .prepare(
+          `SELECT journey_id, step_index, latitude, longitude, location_precision
+           FROM drawings
+           WHERE journey_id IN (${rows.results.map(() => '?').join(', ')})
+           ORDER BY journey_id, step_index ASC`,
+        )
+        .bind(...rows.results.map((journey) => journey.id))
+        .all<Pick<DrawingRow, 'journey_id' | 'step_index' | 'latitude' | 'longitude' | 'location_precision'>>();
+
+  const pointsByJourney = new Map<string, typeof distanceRows.results>();
+  for (const point of distanceRows.results) {
+    const current = pointsByJourney.get(point.journey_id) ?? [];
+    current.push(point);
+    pointsByJourney.set(point.journey_id, current);
+  }
+  const distancesByJourney = new Map(
+    rows.results.map((journey) => [
+      journey.id,
+      measureJourney(
+        (pointsByJourney.get(journey.id) ?? []).map((point) => ({
+          latitude: point.latitude,
+          longitude: point.longitude,
+          locationPrecision: point.location_precision,
+        })),
+      ),
+    ]),
+  );
+
+  const selectedRows = options.sort === 'distance'
+    ? [...rows.results]
+        .sort((left, right) => {
+          const leftDistance = distancesByJourney.get(left.id)?.distanceKm ?? null;
+          const rightDistance = distancesByJourney.get(right.id)?.distanceKm ?? null;
+          if (leftDistance == null && rightDistance == null) return right.updated_at - left.updated_at;
+          if (leftDistance == null) return 1;
+          if (rightDistance == null) return -1;
+          return rightDistance - leftDistance || right.updated_at - left.updated_at;
+        })
+        .slice(0, options.limit)
+    : rows.results;
+
+  const placeholders = selectedRows.map(() => '?').join(', ');
+  const previewRows = await database
     .prepare(
       `SELECT id, journey_id, step_index, country_code, city, latitude, longitude,
               location_precision, created_at
@@ -1106,7 +1163,7 @@ export async function listPublicJourneys(options: {
        WHERE preview_rank <= 20 OR step_index = 0
        ORDER BY journey_id, step_index ASC`,
     )
-    .bind(...rows.results.map((journey) => journey.id))
+    .bind(...selectedRows.map((journey) => journey.id))
     .all<Pick<
       DrawingRow,
       | 'id'
@@ -1126,7 +1183,7 @@ export async function listPublicJourneys(options: {
     previewsByJourney.set(drawing.journey_id, current);
   }
 
-  return rows.results.map((journey) => {
+  return selectedRows.map((journey) => {
     const drawingPreviews = (previewsByJourney.get(journey.id) ?? []).map((drawing) => ({
       id: drawing.id,
       stepIndex: drawing.step_index,
@@ -1138,21 +1195,24 @@ export async function listPublicJourneys(options: {
       createdAt: drawing.created_at,
       imageUrl: `/api/public/journeys/${encodeURIComponent(journey.public_slug)}/drawings/${encodeURIComponent(drawing.id)}`,
     }));
+    const distance = distancesByJourney.get(journey.id) ?? { distanceKm: null, approximate: false };
     return {
-    publicSlug: journey.public_slug,
-    status: journey.status,
-    targetRedraws: journey.target_redraws,
-    redrawCount: journey.redraw_count,
-    participantCount: journey.redraw_count + 1,
-    createdAt: journey.created_at,
-    updatedAt: journey.updated_at,
-    completedAt: journey.completed_at,
-    voteCount: Number(journey.vote_count),
-    coverImageUrl:
-      journey.current_drawing_id
-        ? `/api/public/journeys/${encodeURIComponent(journey.public_slug)}/drawings/${encodeURIComponent(journey.current_drawing_id)}`
-        : null,
-    drawingPreviews,
+      publicSlug: journey.public_slug,
+      status: journey.status,
+      targetRedraws: journey.target_redraws,
+      redrawCount: journey.redraw_count,
+      participantCount: journey.redraw_count + 1,
+      createdAt: journey.created_at,
+      updatedAt: journey.updated_at,
+      completedAt: journey.completed_at,
+      voteCount: Number(journey.vote_count),
+      distanceKm: distance.distanceKm,
+      distanceApproximate: distance.approximate,
+      coverImageUrl:
+        journey.current_drawing_id
+          ? `/api/public/journeys/${encodeURIComponent(journey.public_slug)}/drawings/${encodeURIComponent(journey.current_drawing_id)}`
+          : null,
+      drawingPreviews,
     };
   });
 }

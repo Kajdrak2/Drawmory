@@ -69,7 +69,7 @@ export function CreateFlow() {
       <SiteHeader compact />
       <section className="flow-shell">
         <div className="flow-heading">
-          <span className="flow-kicker">Create · {step === 'draw' ? '01' : '02'}</span>
+          <span className="flow-kicker">{t('create')} · {step === 'draw' ? '01' : '02'}</span>
           <h1>{step === 'draw' ? t('drawFirst') : t('chooseLength')}</h1>
           <p>{step === 'draw' ? t('keepSimple') : t('privacyLine')}</p>
         </div>

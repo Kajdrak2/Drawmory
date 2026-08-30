@@ -87,7 +87,7 @@ export function ReceiveFlow() {
       <SiteHeader compact />
       <section className="flow-shell receive-shell">
         <div className="flow-heading">
-          <span className="flow-kicker">Receive</span>
+          <span className="flow-kicker">{t('receive')}</span>
           <h1>{t('receiveSubtitle')}</h1>
           <p>{t('privacyLine')}</p>
         </div>

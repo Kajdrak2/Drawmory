@@ -7,6 +7,7 @@ import { apiFetch } from '@/lib/client/api';
 import { DocumentLink } from './document-link';
 import { useLanguage } from './language-provider';
 import { getOrCreateVoterToken, readVotedJourneys, rememberVote } from '@/lib/client/voting';
+import { getLanguageOption } from '@/lib/i18n';
 
 type JourneyCardData = {
   publicSlug: string;
@@ -17,6 +18,8 @@ type JourneyCardData = {
   createdAt: number;
   completedAt: number | null;
   voteCount: number;
+  distanceKm: number | null;
+  distanceApproximate: boolean;
   coverImageUrl: string | null;
   drawingPreviews: Array<{
     id: string;
@@ -29,7 +32,7 @@ type JourneyCardData = {
 
 type JourneyListResponse = { items: JourneyCardData[] };
 type StatusFilter = 'all' | 'completed' | 'in_progress';
-type SortFilter = 'random' | 'newest' | 'oldest' | 'progress' | 'votes';
+type SortFilter = 'random' | 'newest' | 'oldest' | 'progress' | 'votes' | 'distance';
 
 export function CommunityGallery() {
   const { language, t } = useLanguage();
@@ -59,14 +62,14 @@ export function CommunityGallery() {
       })
       .catch((caught) => {
         if (active) {
-          setError(caught instanceof Error ? caught.message : 'The library could not be loaded.');
+          setError(caught instanceof Error ? caught.message : t('libraryLoadFailed'));
           setLibrary([]);
         }
       });
     return () => {
       active = false;
     };
-  }, [shuffle, sort, status]);
+  }, [shuffle, sort, status, t]);
 
   useEffect(() => {
     let active = true;
@@ -76,14 +79,14 @@ export function CommunityGallery() {
       })
       .catch((caught) => {
         if (active) {
-          setError(caught instanceof Error ? caught.message : 'The Hall of Fame could not be loaded.');
+          setError(caught instanceof Error ? caught.message : t('hallLoadFailed'));
           setHall([]);
         }
       });
     return () => {
       active = false;
     };
-  }, []);
+  }, [t]);
 
   const vote = async (journey: JourneyCardData) => {
     if (voting || votedJourneys.has(journey.publicSlug)) return;
@@ -110,7 +113,7 @@ export function CommunityGallery() {
         '/api/public/journeys?status=all&sort=votes&limit=6',
       ).then((refreshed) => setHall(refreshed.items), () => undefined);
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : 'The vote could not be saved.');
+      setError(caught instanceof Error ? caught.message : t('voteSaveFailed'));
     } finally {
       setVoting(null);
     }
@@ -124,11 +127,21 @@ export function CommunityGallery() {
   };
 
   const formatDate = (timestamp: number) =>
-    new Intl.DateTimeFormat(language === 'fr' ? 'fr-FR' : 'en-GB', {
+    new Intl.DateTimeFormat(getLanguageOption(language).locale, {
       day: 'numeric',
       month: 'short',
       year: 'numeric',
     }).format(timestamp);
+
+  const formatDistance = (journey: JourneyCardData) => {
+    if (journey.distanceKm == null) return t('distanceUnknown');
+    const distance = new Intl.NumberFormat(getLanguageOption(language).locale, {
+      maximumFractionDigits: journey.distanceKm < 10 ? 1 : 0,
+    }).format(journey.distanceKm);
+    return t(journey.distanceApproximate ? 'distanceTravelledApproximate' : 'distanceTravelled', {
+      distance,
+    });
+  };
 
   const renderCard = (journey: JourneyCardData, rank?: number) => {
     const completed = journey.status === 'COMPLETED';
@@ -196,6 +209,9 @@ export function CommunityGallery() {
           <div className="journey-card-copy">
             <strong>Drawmory #{journey.publicSlug.slice(0, 5).toUpperCase()}</strong>
             <small>{t('createdOn', { date: formatDate(journey.createdAt) })}</small>
+            {journey.distanceKm != null || sort === 'distance' ? (
+              <small className="journey-distance">{formatDistance(journey)}</small>
+            ) : null}
             <div className="journey-progress-mini" aria-label={t('progress', {
               current: journey.redrawCount,
               target: journey.targetRedraws < 0 ? '∞' : journey.targetRedraws,
@@ -230,7 +246,7 @@ export function CommunityGallery() {
       <section className="community-section library-section">
         <div className="community-heading">
           <div>
-            <p className="section-kicker">Community</p>
+            <p className="section-kicker">{t('community')}</p>
             <h2>{t('libraryTitle')}</h2>
             <p>{t('librarySubtitle')}</p>
           </div>
@@ -251,6 +267,7 @@ export function CommunityGallery() {
                 <option value="oldest">{t('oldestSort')}</option>
                 <option value="progress">{t('progressSort')}</option>
                 <option value="votes">{t('votesSort')}</option>
+                <option value="distance">{t('distanceSort')}</option>
               </select>
             </label>
             {sort === 'random' ? (
@@ -291,7 +308,7 @@ export function CommunityGallery() {
       <section className="community-section hall-section">
         <div className="community-heading hall-heading">
           <div>
-            <p className="section-kicker">Community picks</p>
+            <p className="section-kicker">{t('communityPicks')}</p>
             <h2>{t('hallTitle')}</h2>
             <p>{t('hallSubtitle')}</p>
           </div>

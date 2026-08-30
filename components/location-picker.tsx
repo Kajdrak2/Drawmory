@@ -4,6 +4,7 @@ import { useId, useMemo, useState } from 'react';
 import countries from 'world-countries';
 import type { DrawingLocationInput } from '@/lib/location';
 import { useLanguage } from './language-provider';
+import { getLanguageOption } from '@/lib/i18n';
 
 export function LocationPicker({
   value,
@@ -20,18 +21,18 @@ export function LocationPicker({
   const fieldId = useId();
   const [locating, setLocating] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const locale = getLanguageOption(language).locale;
   const options = useMemo(
-    () =>
-      countries
+    () => {
+      const displayNames = new Intl.DisplayNames([locale], { type: 'region' });
+      return countries
         .map((country) => ({
           code: country.cca2,
-          label:
-            language === 'fr'
-              ? country.translations.fra?.common ?? country.name.common
-              : country.name.common,
+          label: displayNames.of(country.cca2) ?? country.name.common,
         }))
-        .sort((left, right) => left.label.localeCompare(right.label, language)),
-    [language],
+        .sort((left, right) => left.label.localeCompare(right.label, locale));
+    },
+    [locale],
   );
 
   const usePosition = () => {

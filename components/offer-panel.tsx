@@ -23,7 +23,7 @@ export function OfferPanel({
   return (
     <section className="offer-panel" aria-live="polite">
       <span className="offer-eye" aria-hidden="true"><span /></span>
-      <p className="flow-kicker">{preview.mode === 'WORLD' ? 'World handoff' : 'Private handoff'}</p>
+      <p className="flow-kicker">{preview.mode === 'WORLD' ? t('world') : t('passSomeone')}</p>
       <h2>{t('waitingForYou')}</h2>
       <p>
         {t('carrierNumber')} <strong>#{preview.redrawCount + 2}</strong>
