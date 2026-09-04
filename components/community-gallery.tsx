@@ -10,7 +10,7 @@ import { getOrCreateVoterToken, readVotedJourneys, rememberVote } from '@/lib/cl
 import { getLanguageOption } from '@/lib/i18n';
 import { JourneyMap } from './journey-map';
 
-type JourneyCardData = {
+export type JourneyCardData = {
   publicSlug: string;
   status: string;
   targetRedraws: number;
@@ -44,14 +44,20 @@ type JourneyListResponse = { items: JourneyCardData[] };
 type StatusFilter = 'all' | 'completed' | 'in_progress';
 type SortFilter = 'random' | 'newest' | 'oldest' | 'progress' | 'votes' | 'distance';
 
-export function CommunityGallery() {
+export function CommunityGallery({
+  initialLibrary = null,
+  initialHall = null,
+}: {
+  initialLibrary?: JourneyCardData[] | null;
+  initialHall?: JourneyCardData[] | null;
+}) {
   const { language, t } = useLanguage();
   const carouselRef = useRef<HTMLDivElement>(null);
   const [status, setStatus] = useState<StatusFilter>('all');
   const [sort, setSort] = useState<SortFilter>('random');
   const [shuffle, setShuffle] = useState(0);
-  const [library, setLibrary] = useState<JourneyCardData[] | null>(null);
-  const [hall, setHall] = useState<JourneyCardData[] | null>(null);
+  const [library, setLibrary] = useState<JourneyCardData[] | null>(initialLibrary);
+  const [hall, setHall] = useState<JourneyCardData[] | null>(initialHall);
   const [votedJourneys, setVotedJourneys] = useState<Set<string>>(new Set());
   const [voting, setVoting] = useState<string | null>(null);
   const [previewIndexes, setPreviewIndexes] = useState<Record<string, number>>({});

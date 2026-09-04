@@ -1,39 +1,57 @@
-'use client';
+import type { Metadata } from 'next';
+import { HomePage } from '@/components/home-page';
+import { BRAND, CANONICAL_ORIGIN } from '@/lib/brand';
+import { listPublicJourneys } from '@/lib/server/repository';
 
-import { SiteHeader } from '@/components/site-header';
-import { useLanguage } from '@/components/language-provider';
-import { DocumentLink } from '@/components/document-link';
-import { CommunityGallery } from '@/components/community-gallery';
+export const dynamic = 'force-dynamic';
 
-export default function Home() {
-  const { t } = useLanguage();
+export const metadata: Metadata = {
+  alternates: { canonical: '/' },
+  robots: {
+    index: true,
+    follow: true,
+    googleBot: {
+      index: true,
+      follow: true,
+      'max-image-preview': 'large',
+      'max-snippet': -1,
+      'max-video-preview': -1,
+    },
+  },
+};
+
+const websiteStructuredData = {
+  '@context': 'https://schema.org',
+  '@type': 'WebSite',
+  '@id': `${CANONICAL_ORIGIN}/#website`,
+  url: `${CANONICAL_ORIGIN}/`,
+  name: BRAND.name,
+  description: BRAND.description,
+  inLanguage: ['en', 'fr', 'es', 'de', 'pt-BR', 'tr', 'ar', 'ja', 'ko', 'zh-CN'],
+};
+
+type HomeJourneyList = Awaited<ReturnType<typeof listPublicJourneys>>;
+
+async function getHomeJourneys(): Promise<[HomeJourneyList, HomeJourneyList]> {
+  try {
+    return await Promise.all([
+      listPublicJourneys({ status: 'all', sort: 'random', limit: 14 }),
+      listPublicJourneys({ status: 'all', sort: 'votes', limit: 6 }),
+    ]);
+  } catch {
+    return [[], []];
+  }
+}
+
+export default async function Home() {
+  const [initialLibrary, initialHall] = await getHomeJourneys();
   return (
-    <main className="landing-shell">
-      <SiteHeader />
-
-      <section className="home-start">
-        <h1 className="sr-only">Drawmory</h1>
-
-        <div className="action-grid" aria-label={t('startPrompt')}>
-          <DocumentLink className="action-card action-card-create" href="/create" aria-label={t('create')}>
-            <span className="action-index">01</span>
-            <span className="action-label">{t('create')}</span>
-            <span className="action-arrow" aria-hidden="true">
-              ↗
-            </span>
-          </DocumentLink>
-
-          <DocumentLink className="action-card action-card-receive" href="/receive" aria-label={t('receive')}>
-            <span className="action-index">02</span>
-            <span className="action-label">{t('receive')}</span>
-            <span className="action-arrow" aria-hidden="true">
-              ↗
-            </span>
-          </DocumentLink>
-        </div>
-
-        <CommunityGallery />
-      </section>
-    </main>
+    <>
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(websiteStructuredData).replace(/</g, '\\u003c') }}
+      />
+      <HomePage initialLibrary={initialLibrary} initialHall={initialHall} />
+    </>
   );
 }

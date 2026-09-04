@@ -1,8 +1,17 @@
 import type { Metadata } from 'next';
+import { notFound } from 'next/navigation';
 import { JourneyReveal } from '@/components/journey-reveal';
 import { getPublicJourney } from '@/lib/server/repository';
 
 export const dynamic = 'force-dynamic';
+
+async function getJourneyOrNotFound(publicSlug: string) {
+  try {
+    return await getPublicJourney(publicSlug);
+  } catch {
+    notFound();
+  }
+}
 
 export async function generateMetadata({
   params,
@@ -12,23 +21,37 @@ export async function generateMetadata({
   const { publicSlug } = await params;
   try {
     const journey = await getPublicJourney(publicSlug);
-    const title =
-      journey.status === 'COMPLETED'
-        ? `${journey.participantCount} memories — Drawmory`
-        : `${journey.redrawCount} of ${journey.targetRedraws} redraws — Drawmory`;
+    const shortCode = publicSlug.slice(0, 5).toUpperCase();
+    const title = `Journey #${shortCode} — ${journey.participantCount} ${journey.participantCount === 1 ? 'memory' : 'memories'}`;
     const description =
       journey.status === 'COMPLETED'
-        ? 'Completed Drawmory.'
-        : 'Drawmory in progress.';
-    const firstImage = journey.drawings[0]?.imageUrl;
+        ? `A completed collaborative drawing journey with ${journey.participantCount} memories across ${journey.countryCount} ${journey.countryCount === 1 ? 'country' : 'countries'}.`
+        : `An ongoing collaborative drawing journey with ${journey.participantCount} ${journey.participantCount === 1 ? 'memory' : 'memories'}.`;
+    const previewImage = journey.drawings.at(-1);
+    const canonicalPath = `/journey/${encodeURIComponent(publicSlug)}`;
+    const images = previewImage
+      ? [{
+          url: previewImage.imageUrl,
+          width: previewImage.width,
+          height: previewImage.height,
+          alt: `Drawmory journey #${shortCode}`,
+        }]
+      : [];
     return {
       title,
       description,
-      openGraph: { title, description, images: firstImage ? [firstImage] : [] },
-      twitter: { title, description, images: firstImage ? [firstImage] : [] },
+      alternates: { canonical: canonicalPath },
+      robots: { index: true, follow: true },
+      openGraph: { type: 'website', url: canonicalPath, title, description, images },
+      twitter: { card: 'summary_large_image', title, description, images },
     };
   } catch {
-    return { title: 'Drawmory journey', openGraph: { images: [] }, twitter: { images: [] } };
+    return {
+      title: 'Journey not found',
+      robots: { index: false, follow: false },
+      openGraph: { images: [] },
+      twitter: { images: [] },
+    };
   }
 }
 
@@ -38,5 +61,6 @@ export default async function JourneyPage({
   params: Promise<{ publicSlug: string }>;
 }) {
   const { publicSlug } = await params;
-  return <JourneyReveal publicSlug={publicSlug} />;
+  const initialJourney = await getJourneyOrNotFound(publicSlug);
+  return <JourneyReveal publicSlug={publicSlug} initialJourney={initialJourney} />;
 }

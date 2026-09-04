@@ -41,6 +41,10 @@ test('the home screen shows and opens every starting route on mobile', async ({ 
   await expect(page.getByText('Your Drawmories on this device')).toHaveCount(0);
   await expect(page.getByText(/A drawing travels from memory to memory/i)).toHaveCount(0);
   await expect(page.locator('.action-gesture')).toHaveCount(0);
+  await expect(page).toHaveTitle('Drawmory — Collaborative Drawing Game');
+  await expect(page.locator('link[rel="canonical"]')).toHaveAttribute('href', 'https://drawmory.xyz');
+  await expect(page.locator('link[rel="manifest"]')).toHaveAttribute('href', '/manifest.webmanifest');
+  await expect(page.locator('script[type="application/ld+json"]')).toHaveCount(1);
   await expect(page.locator('link[rel="icon"][href="/favicon.ico?v=7"]')).toHaveCount(1);
   const faviconResponse = await page.request.get('/favicon.ico?v=7');
   expect(faviconResponse.ok()).toBeTruthy();
@@ -51,19 +55,49 @@ test('the home screen shows and opens every starting route on mobile', async ({ 
 
   await howLink.click();
   await expect(page).toHaveURL(/\/how-it-works$/);
+  await expect(page).toHaveTitle('How it works | Drawmory');
   await expect(page.getByRole('heading', { name: 'How it works', exact: true })).toBeVisible();
 
   await page.goto('/');
   await page.getByRole('link', { name: 'Receive', exact: true }).click();
   await expect(page).toHaveURL(/\/receive$/);
+  await expect(page).toHaveTitle('Receive a Drawmory | Drawmory');
   await expect(page.getByRole('heading', { name: 'Receive', exact: true })).toBeVisible();
 
   await page.goto('/');
   await page.getByRole('link', { name: 'Create', exact: true }).click();
   await expect(page).toHaveURL(/\/create$/);
+  await expect(page).toHaveTitle('Create a drawing journey | Drawmory');
   await expect(page.getByRole('heading', { name: 'Create', exact: true })).toBeVisible();
   await expect(page.getByText('Draw the first version.')).toHaveCount(0);
   await expect(page.getByText(/Keep it simple/i)).toHaveCount(0);
+});
+
+test('search engines receive a sitemap, crawl rules, manifest and private-page noindex', async ({ page }) => {
+  const robotsResponse = await page.request.get('/robots.txt');
+  expect(robotsResponse.ok()).toBeTruthy();
+  const robots = await robotsResponse.text();
+  expect(robots).toContain('Sitemap: https://drawmory.xyz/sitemap.xml');
+  expect(robots).toContain('Allow: /api/public/journeys/');
+  expect(robots).toContain('Disallow: /api/');
+
+  const sitemapResponse = await page.request.get('/sitemap.xml');
+  expect(sitemapResponse.ok()).toBeTruthy();
+  const sitemap = await sitemapResponse.text();
+  expect(sitemap).toContain('<loc>https://drawmory.xyz/</loc>');
+  expect(sitemap).toContain('<loc>https://drawmory.xyz/how-it-works</loc>');
+  expect(sitemap).toContain('<loc>https://drawmory.xyz/create</loc>');
+  expect(sitemap).toContain('<loc>https://drawmory.xyz/receive</loc>');
+
+  const manifestResponse = await page.request.get('/manifest.webmanifest');
+  expect(manifestResponse.ok()).toBeTruthy();
+  const manifest = await manifestResponse.json();
+  expect(manifest.name).toBe('Drawmory — Collaborative Drawing Game');
+  expect(manifest.start_url).toBe('/');
+
+  const privatePageResponse = await page.request.get('/carry/not-a-real-claim');
+  expect(privatePageResponse.ok()).toBeTruthy();
+  expect(await privatePageResponse.text()).toMatch(/<meta name="robots" content="[^"]*noindex[^"]*"/i);
 });
 
 test('journey distance follows consecutive geolocated steps without bridging gaps', () => {
@@ -282,6 +316,16 @@ test('a world journey keeps travelling automatically, stays public, inherits loc
   await firstCarrier.getByTestId('skip-location').click();
   await expect(firstCarrier).toHaveURL(/\/receipt\//);
   await expect(firstCarrier.getByText(/returned to the world automatically/i)).toBeVisible();
+
+  await expect.poll(async () => {
+    const response = await firstCarrier.request.get(`/journey/${publicSlug}`);
+    const html = await response.text();
+    return response.ok() && html.includes('Journey in progress') && html.includes('Redraw 1');
+  }, { timeout: 20_000 }).toBeTruthy();
+  await expect.poll(async () => {
+    const response = await firstCarrier.request.get('/sitemap.xml');
+    return (await response.text()).includes(`/journey/${publicSlug}`);
+  }, { timeout: 20_000 }).toBeTruthy();
 
   await firstCarrier.goto(`/journey/${publicSlug}`);
   await expect(firstCarrier.getByText('Journey in progress')).toBeVisible();

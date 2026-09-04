@@ -1249,6 +1249,26 @@ export async function listPublicJourneys(options: {
   });
 }
 
+export async function listPublicJourneyIndexEntries(limit = 5_000) {
+  await ensureSchema();
+  const safeLimit = Math.max(1, Math.min(50_000, Math.trunc(limit)));
+  const rows = await getDatabase()
+    .prepare(
+      `SELECT public_slug, updated_at
+       FROM journeys
+       WHERE flagged = 0 AND status != 'EXPIRED'
+       ORDER BY updated_at DESC
+       LIMIT ?`,
+    )
+    .bind(safeLimit)
+    .all<{ public_slug: string; updated_at: number }>();
+
+  return rows.results.map((journey) => ({
+    publicSlug: journey.public_slug,
+    updatedAt: journey.updated_at,
+  }));
+}
+
 export async function voteForJourney(publicSlug: string, voterToken: string) {
   await ensureSchema();
   const database = getDatabase();

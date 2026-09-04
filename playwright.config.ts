@@ -25,6 +25,7 @@ export default defineConfig({
       DRAWMORY_CLAIM_SECONDS: '60',
       DRAWMORY_ADMIN_CAPABILITY: 'test-admin-capability-0123456789abcdef-0123456789abcdef',
       DRAWMORY_ADMIN_SESSION_SECRET: 'test-admin-session-secret-fedcba9876543210-fedcba9876543210',
+      DRAWMORY_EPHEMERAL_STATE: '1',
     },
   },
 });

@@ -44,10 +44,16 @@ function durationLabel(start: number, end: number | null) {
   return `${hours}h ${minutes % 60}m`;
 }
 
-export function JourneyReveal({ publicSlug }: { publicSlug: string }) {
+export function JourneyReveal({
+  publicSlug,
+  initialJourney,
+}: {
+  publicSlug: string;
+  initialJourney: PublicJourney;
+}) {
   const { t } = useLanguage();
-  const lastLoadedJourneyRef = useRef<PublicJourney | null>(null);
-  const [journey, setJourney] = useState<PublicJourney | null>(null);
+  const lastLoadedJourneyRef = useRef<PublicJourney | null>(initialJourney);
+  const [journey, setJourney] = useState<PublicJourney | null>(initialJourney);
   const [activeIndex, setActiveIndex] = useState(0);
   const [playing, setPlaying] = useState(true);
   const [view, setView] = useState<'book' | 'mural'>('book');
