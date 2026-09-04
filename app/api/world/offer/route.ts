@@ -1,9 +1,14 @@
+import { z } from 'zod';
 import { apiError, apiJson } from '@/lib/server/api';
 import { createWorldOffer } from '@/lib/server/repository';
 
-export async function POST() {
+const offerSchema = z.object({ includeNsfw: z.boolean().default(false) });
+
+export async function POST(request: Request) {
   try {
-    const offer = await createWorldOffer();
+    const body = await request.text();
+    const input = offerSchema.parse(body ? JSON.parse(body) : {});
+    const offer = await createWorldOffer(input.includeNsfw);
     return offer
       ? apiJson(offer, { status: 201 })
       : apiJson(

@@ -6,6 +6,7 @@ const listSchema = z.object({
   status: z.enum(['all', 'completed', 'in_progress']).default('all'),
   sort: z.enum(['random', 'newest', 'oldest', 'progress', 'votes', 'distance']).default('random'),
   limit: z.coerce.number().int().min(1).max(24).default(12),
+  includeNsfw: z.enum(['0', '1']).default('0').transform((value) => value === '1'),
 });
 
 export async function GET(request: Request) {
@@ -15,6 +16,7 @@ export async function GET(request: Request) {
       status: url.searchParams.get('status') ?? undefined,
       sort: url.searchParams.get('sort') ?? undefined,
       limit: url.searchParams.get('limit') ?? undefined,
+      includeNsfw: url.searchParams.get('includeNsfw') ?? undefined,
     });
     return apiJson({ items: await listPublicJourneys(input) });
   } catch (error) {

@@ -7,9 +7,11 @@ import { DocumentLink } from './document-link';
 import { useLanguage } from './language-provider';
 import { HandoffPreview, OfferPanel } from './offer-panel';
 import { SiteHeader } from './site-header';
+import { useContentPreferences } from './content-preferences';
 
 export function HandoffFlow({ token }: { token: string }) {
   const { t } = useLanguage();
+  const { showNsfw } = useContentPreferences();
   const [preview, setPreview] = useState<HandoffPreview | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -29,7 +31,7 @@ export function HandoffFlow({ token }: { token: string }) {
     try {
       const result = await apiFetch<{ claimId: string }>('/api/handoffs/claim', {
         method: 'POST',
-        body: JSON.stringify({ token }),
+        body: JSON.stringify({ token, includeNsfw: showNsfw }),
       });
       navigateTo(`/carry/${encodeURIComponent(result.claimId)}`);
     } catch (caught) {

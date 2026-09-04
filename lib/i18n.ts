@@ -200,6 +200,13 @@ const baseTranslations = {
     completeJourney: 'Journey complete',
     openLoop: 'Open journey',
     sameLocation: 'Same location as the previous drawing',
+    showNsfw: 'Show NSFW',
+    nsfwDrawing: 'NSFW drawing',
+    nsfwHidden: 'NSFW drawing hidden',
+    nsfwHiddenBody: 'This drawing is hidden because NSFW content is turned off.',
+    markNsfw: 'Mark as NSFW',
+    markNsfwHint: 'Mark this drawing if it contains adult or sensitive content.',
+    nsfwOfferBlocked: 'No compatible drawings are available with this filter.',
   },
   fr: {
     howItWorks: 'Comment ça marche',
@@ -400,6 +407,13 @@ const baseTranslations = {
     completeJourney: 'Voyage terminé',
     openLoop: 'Voyage ouvert',
     sameLocation: 'Même lieu que le dessin précédent',
+    showNsfw: 'Afficher les dessins NSFW',
+    nsfwDrawing: 'Dessin NSFW',
+    nsfwHidden: 'Dessin NSFW masqué',
+    nsfwHiddenBody: 'Ce dessin est masqué car l’affichage des contenus NSFW est désactivé.',
+    markNsfw: 'Signaler comme NSFW',
+    markNsfwHint: 'Coche cette case si le dessin contient du contenu adulte ou sensible.',
+    nsfwOfferBlocked: 'Aucun dessin compatible n’est proposé avec ce filtre.',
   },
 } as const;
 

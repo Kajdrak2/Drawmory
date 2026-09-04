@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from 'next';
 import './globals.css';
 import { BRAND, CANONICAL_ORIGIN } from '../lib/brand';
 import { LanguageProvider } from '@/components/language-provider';
+import { ContentPreferencesProvider } from '@/components/content-preferences';
 
 export const metadata: Metadata = {
   metadataBase: new URL(CANONICAL_ORIGIN),
@@ -46,7 +47,9 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
   return (
     <html lang="en">
       <body>
-        <LanguageProvider>{children}</LanguageProvider>
+        <LanguageProvider>
+          <ContentPreferencesProvider>{children}</ContentPreferencesProvider>
+        </LanguageProvider>
       </body>
     </html>
   );

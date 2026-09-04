@@ -141,6 +141,60 @@ a {
   cursor: pointer;
 }
 
+.nsfw-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.nsfw-toggle input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+}
+
+.nsfw-toggle > span {
+  position: relative;
+  width: 34px;
+  height: 20px;
+  border: 1.5px solid var(--ink);
+  border-radius: 999px;
+  background: var(--paper-deep);
+  box-shadow: 2px 2px 0 var(--ink);
+}
+
+.nsfw-toggle i {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  background: var(--ink);
+  transition: transform 150ms ease;
+}
+
+.nsfw-toggle input:checked + span {
+  background: var(--coral);
+}
+
+.nsfw-toggle input:checked + span i {
+  transform: translateX(14px);
+}
+
+.nsfw-toggle input:focus-visible + span {
+  outline: 3px solid var(--violet);
+  outline-offset: 3px;
+}
+
+.nsfw-toggle strong {
+  font-size: 0.66rem;
+  letter-spacing: 0.05em;
+}
+
 html[dir='rtl'] body {
   text-align: right;
 }
@@ -597,6 +651,58 @@ html[dir='rtl'] .action-arrow {
   font: 850 0.76rem/1 "Aptos Mono", monospace;
 }
 
+.nsfw-placeholder {
+  display: grid;
+  width: 100%;
+  min-height: 160px;
+  place-content: center;
+  justify-items: center;
+  gap: 8px;
+  padding: 20px;
+  border: 2px dashed rgb(29 24 48 / 42%);
+  border-radius: 18px;
+  background:
+    repeating-linear-gradient(135deg, rgb(239 127 109 / 13%) 0 12px, transparent 12px 24px),
+    var(--paper);
+  color: var(--ink);
+  text-align: center;
+}
+
+.nsfw-placeholder strong {
+  font: 850 0.78rem/1.2 "Aptos Mono", monospace;
+}
+
+.nsfw-placeholder p {
+  max-width: 390px;
+  margin: 0;
+  color: rgb(29 24 48 / 67%);
+  font-size: 0.78rem;
+  line-height: 1.4;
+}
+
+.nsfw-badge {
+  padding: 5px 8px;
+  border: 1.5px solid var(--ink);
+  border-radius: 999px;
+  background: var(--coral);
+  font: 900 0.65rem/1 "Aptos Mono", monospace;
+  letter-spacing: 0.08em;
+}
+
+.nsfw-placeholder-compact {
+  height: 100%;
+  min-height: 0;
+  aspect-ratio: 1;
+  gap: 6px;
+  padding: 10px;
+  border: 0;
+  border-radius: 12px;
+}
+
+.nsfw-placeholder-compact strong {
+  font-size: 0.64rem;
+}
+
 .hidden-orbit {
   position: relative;
   display: grid;
@@ -983,6 +1089,23 @@ html[dir='rtl'] .action-arrow {
   }
 }
 
+@media (max-width: 520px) {
+  .site-header {
+    flex-wrap: wrap;
+    gap: 11px;
+  }
+
+  .header-actions {
+    width: 100%;
+    justify-content: space-between;
+    gap: 8px;
+  }
+
+  .language-select {
+    max-width: 96px;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
@@ -1150,6 +1273,69 @@ button:disabled {
   display: flex;
   justify-content: flex-end;
   margin-top: 24px;
+}
+
+.nsfw-field {
+  display: flex;
+  width: min(100%, 690px);
+  align-items: flex-start;
+  gap: 12px;
+  margin-top: 20px;
+  padding: 15px 17px;
+  border: 1.5px solid rgb(29 24 48 / 35%);
+  border-radius: 17px;
+  background: rgb(255 253 248 / 82%);
+  cursor: pointer;
+}
+
+.nsfw-field input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+}
+
+.nsfw-checkbox {
+  position: relative;
+  display: grid;
+  width: 24px;
+  height: 24px;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 2px solid var(--ink);
+  border-radius: 7px;
+  background: var(--white);
+  box-shadow: 2px 2px 0 var(--ink);
+}
+
+.nsfw-field input:checked + .nsfw-checkbox {
+  background: var(--coral);
+}
+
+.nsfw-field input:checked + .nsfw-checkbox::after {
+  content: '✓';
+  font-size: 0.86rem;
+  font-weight: 900;
+}
+
+.nsfw-field input:focus-visible + .nsfw-checkbox {
+  outline: 3px solid var(--violet);
+  outline-offset: 3px;
+}
+
+.nsfw-field > span:last-child {
+  display: grid;
+  gap: 3px;
+}
+
+.nsfw-field strong {
+  font-size: 0.82rem;
+}
+
+.nsfw-field small {
+  color: rgb(29 24 48 / 62%);
+  font-size: 0.72rem;
+  line-height: 1.4;
 }
 
 .split-actions {
@@ -2130,6 +2316,11 @@ select:focus-visible {
   animation: reveal-in 260ms ease-out;
 }
 
+.flipbook-image > .nsfw-placeholder {
+  height: 100%;
+  min-height: 0;
+}
+
 .flipbook-map-slide {
   overflow: hidden;
   background: #dfefff;
@@ -2241,6 +2432,20 @@ select:focus-visible {
   height: 100%;
   border-radius: 10px;
   object-fit: contain;
+}
+
+.timeline-strip .nsfw-placeholder {
+  width: 100%;
+  height: 100%;
+  padding: 5px;
+}
+
+.timeline-strip .nsfw-placeholder strong {
+  display: none;
+}
+
+.timeline-strip .nsfw-badge {
+  display: none;
 }
 
 .timeline-strip span {
@@ -2379,6 +2584,10 @@ select:focus-visible {
   aspect-ratio: 1;
   border-radius: 13px;
   object-fit: contain;
+}
+
+.mural-grid .nsfw-placeholder {
+  aspect-ratio: 1;
 }
 
 .mural-grid figcaption {

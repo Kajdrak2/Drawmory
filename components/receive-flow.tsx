@@ -8,6 +8,7 @@ import { useLanguage } from './language-provider';
 import { HandoffPreview, OfferPanel } from './offer-panel';
 import { SiteHeader } from './site-header';
 import { useClientReady } from '@/lib/client/hydration';
+import { useContentPreferences } from './content-preferences';
 
 type WorldOffer = {
   token: string;
@@ -19,6 +20,7 @@ type ClaimResult = { claimId: string };
 
 export function ReceiveFlow() {
   const { t } = useLanguage();
+  const { showNsfw, preferencesReady } = useContentPreferences();
   const [code, setCode] = useState('');
   const [secret, setSecret] = useState<{ token?: string; code?: string } | null>(null);
   const [preview, setPreview] = useState<HandoffPreview | null>(null);
@@ -52,7 +54,10 @@ export function ReceiveFlow() {
     setError(null);
     setWorldEmpty(false);
     try {
-      const offer = await apiFetch<WorldOffer>('/api/world/offer', { method: 'POST' });
+      const offer = await apiFetch<WorldOffer>('/api/world/offer', {
+        method: 'POST',
+        body: JSON.stringify({ includeNsfw: showNsfw }),
+      });
       setSecret({ token: offer.token });
       setPreview({ ...offer.journey, expiresAt: offer.expiresAt, mode: 'WORLD' });
     } catch (caught) {
@@ -71,7 +76,7 @@ export function ReceiveFlow() {
     try {
       const result = await apiFetch<ClaimResult>('/api/handoffs/claim', {
         method: 'POST',
-        body: JSON.stringify(secret),
+        body: JSON.stringify({ ...secret, includeNsfw: showNsfw }),
       });
       navigateTo(`/carry/${encodeURIComponent(result.claimId)}`);
     } catch (caught) {
@@ -109,7 +114,7 @@ export function ReceiveFlow() {
                 maxLength={16}
                 data-testid="handoff-code"
               />
-              <button className="secondary-button dark-button" type="submit" disabled={busy === 'code' || !ready}>
+              <button className="secondary-button dark-button" type="submit" disabled={busy === 'code' || !ready || !preferencesReady}>
                 {busy === 'code' ? '…' : t('checkCode')}
               </button>
             </form>
@@ -118,7 +123,7 @@ export function ReceiveFlow() {
               <span className="receive-index">02</span>
               <span className="world-orbit small-orbit" aria-hidden="true"><span /></span>
               <h2>{t('receiveWorld')}</h2>
-              <button className="primary-button" type="button" onClick={receiveWorld} disabled={busy === 'world' || !ready} data-testid="receive-world">
+              <button className="primary-button" type="button" onClick={receiveWorld} disabled={busy === 'world' || !ready || !preferencesReady} data-testid="receive-world">
                 {busy === 'world' ? '…' : t('receiveWorld')}
               </button>
             </section>
@@ -127,7 +132,7 @@ export function ReceiveFlow() {
 
         {worldEmpty ? (
           <div className="empty-state" role="status">
-            <strong>{t('worldQuiet')}</strong>
+            <strong>{t(showNsfw ? 'worldQuiet' : 'nsfwOfferBlocked')}</strong>
             <div className="button-row">
               <button className="secondary-button" type="button" onClick={receiveWorld}>{t('tryAgain')}</button>
               <DocumentLink className="quiet-link" href="/create">{t('create')}</DocumentLink>

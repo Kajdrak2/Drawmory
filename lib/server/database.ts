@@ -31,6 +31,7 @@ const schemaStatements = [
     latitude REAL,
     longitude REAL,
     location_precision TEXT NOT NULL DEFAULT 'NONE',
+    is_nsfw INTEGER NOT NULL DEFAULT 0,
     created_at INTEGER NOT NULL,
     UNIQUE(journey_id, step_index)
   )`,
@@ -67,6 +68,7 @@ const schemaStatements = [
     height INTEGER NOT NULL,
     byte_size INTEGER NOT NULL,
     sha256 TEXT NOT NULL,
+    is_nsfw INTEGER NOT NULL DEFAULT 0,
     validated_at INTEGER NOT NULL
   )`,
   `CREATE TABLE IF NOT EXISTS receipts (

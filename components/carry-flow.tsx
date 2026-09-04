@@ -12,6 +12,8 @@ import { useLanguage } from './language-provider';
 import { SiteHeader } from './site-header';
 import { LocationPicker } from './location-picker';
 import type { DrawingLocationInput } from '@/lib/location';
+import { useContentPreferences } from './content-preferences';
+import { NsfwField, NsfwPlaceholder } from './nsfw-controls';
 
 type ClaimPhase =
   | 'ready'
@@ -38,6 +40,7 @@ type ClaimState = {
   drawingExpiresAt: number | null;
   confirmationExpiresAt: number | null;
   imageUrl: string | null;
+  isNsfw: boolean;
 };
 
 type SubmissionResult = {
@@ -74,6 +77,7 @@ function currentPhase(claim: ClaimState | null, now: number): ClaimPhase | null 
 
 export function CarryFlow({ claimId }: { claimId: string }) {
   const { t } = useLanguage();
+  const { showNsfw, preferencesReady } = useContentPreferences();
   const canvasRef = useRef<DrawingCanvasHandle>(null);
   const releaseSent = useRef(false);
   const [claim, setClaim] = useState<ClaimState | null>(null);
@@ -81,6 +85,7 @@ export function CarryFlow({ claimId }: { claimId: string }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [location, setLocation] = useState<DrawingLocationInput>({});
+  const [isNsfw, setIsNsfw] = useState(false);
   const effectivePhase = currentPhase(claim, now);
 
   const validateDrawing = useCallback(async () => {
@@ -99,7 +104,7 @@ export function CarryFlow({ claimId }: { claimId: string }) {
     try {
       const state = await apiFetch<ClaimState>(
         `/api/claims/${encodeURIComponent(claimId)}/validate`,
-        { method: 'POST', body: JSON.stringify({ imageDataUrl }) },
+        { method: 'POST', body: JSON.stringify({ imageDataUrl, isNsfw }) },
       );
       setClaim(state);
       setNow(Date.now());
@@ -108,7 +113,7 @@ export function CarryFlow({ claimId }: { claimId: string }) {
     } finally {
       setBusy(false);
     }
-  }, [busy, claim, claimId, t]);
+  }, [busy, claim, claimId, isNsfw, t]);
 
   const finishLocation = useCallback(async (selectedLocation: DrawingLocationInput | null) => {
     if (busy || !claim) return;
@@ -174,7 +179,7 @@ export function CarryFlow({ claimId }: { claimId: string }) {
   }, [claim, claimId, now]);
 
   async function beginObservation() {
-    if (busy) return;
+    if (busy || !claim || !preferencesReady || (claim.isNsfw && !showNsfw)) return;
     setBusy(true);
     setError(null);
     try {
@@ -257,7 +262,8 @@ export function CarryFlow({ claimId }: { claimId: string }) {
         <section className="ready-card">
           <div className="memory-eye" aria-hidden="true"><span /></div>
           <h1>{t('seeOnce', { seconds: claim.revealSeconds })}</h1>
-          <button className="primary-button wide-button" type="button" onClick={beginObservation} disabled={busy} data-testid="start-reveal">
+          {claim.isNsfw && !showNsfw ? <NsfwPlaceholder /> : null}
+          <button className="primary-button wide-button" type="button" onClick={beginObservation} disabled={busy || !preferencesReady || (claim.isNsfw && !showNsfw)} data-testid="start-reveal">
             {busy ? '…' : t('ready')}
           </button>
           <small>{secondsLeft(claim.reservationExpiresAt, now)}s {t('reservationLeft').toLowerCase()}</small>
@@ -274,7 +280,15 @@ export function CarryFlow({ claimId }: { claimId: string }) {
           <strong>{secondsLeft(claim.observationEndsAt, now)}</strong>
         </div>
         <div className="observed-image-frame">
-          {claim.imageUrl ? <img src={claim.imageUrl} alt="Drawing to remember" draggable={false} /> : null}
+          {claim.isNsfw && !showNsfw ? (
+            <NsfwPlaceholder />
+          ) : claim.imageUrl ? (
+            <img
+              src={`${claim.imageUrl}${claim.isNsfw ? '?includeNsfw=1' : ''}`}
+              alt="Drawing to remember"
+              draggable={false}
+            />
+          ) : null}
         </div>
       </main>
     );
@@ -339,6 +353,7 @@ export function CarryFlow({ claimId }: { claimId: string }) {
         </div>
 
         <DrawingCanvas ref={canvasRef} compact disabled={busy || confirming} />
+        <NsfwField checked={isNsfw} onChange={setIsNsfw} disabled={busy} />
         <div className="flow-actions carry-actions">
           <button className="report-button" type="button" onClick={report} disabled={busy}>{t('reportSkip')}</button>
           <button className="primary-button" type="button" onClick={validateDrawing} disabled={busy} data-testid="submit-redraw">

@@ -9,6 +9,7 @@ import { navigateTo } from '@/lib/client/document-navigation';
 import { saveReceipt } from '@/lib/client/receipts';
 import type { DrawingLocationInput } from '@/lib/location';
 import { LocationPicker } from './location-picker';
+import { NsfwField } from './nsfw-controls';
 
 type CreateResult = {
   journeyId: string;
@@ -26,6 +27,7 @@ export function CreateFlow() {
   const [targetParticipants, setTargetParticipants] = useState<number | 'infinite'>(4);
   const [location, setLocation] = useState<DrawingLocationInput>({});
   const [hasDrawing, setHasDrawing] = useState(false);
+  const [isNsfw, setIsNsfw] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -47,7 +49,7 @@ export function CreateFlow() {
     try {
       const result = await apiFetch<CreateResult>('/api/journeys', {
         method: 'POST',
-        body: JSON.stringify({ imageDataUrl, targetParticipants, location }),
+        body: JSON.stringify({ imageDataUrl, targetParticipants, location, isNsfw }),
       });
       saveReceipt({
         token: result.receiptToken,
@@ -75,6 +77,7 @@ export function CreateFlow() {
         {step === 'draw' ? (
           <>
             <DrawingCanvas ref={canvasRef} onDrawingChange={setHasDrawing} />
+            <NsfwField checked={isNsfw} onChange={setIsNsfw} />
             <div className="flow-actions">
               <button
                 className="primary-button"

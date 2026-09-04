@@ -12,6 +12,7 @@
 - Explore ongoing and completed Drawmories from the home gallery, move through their drawings, and vote once per browser.
 - See each Drawmory as a slide story, a fresco, and—when contributors opt in—a route on a world map.
 - Add an optional country, city, or precise position to a contribution. Nothing is requested by default.
+- Mark each contribution as NSFW before validating it. NSFW images stay hidden and out of the world queue until the device-level toggle is explicitly enabled.
 
 No account, sign-up, login, email or profile is required.
 
@@ -46,6 +47,7 @@ Open `http://localhost:3000`. Local D1 and R2 emulation is configured automatica
 - Image MIME type, signature, byte size, dimensions, and square aspect ratio are validated server-side.
 - A conditional atomic claim permits exactly one carrier; expired reservations return to their prior private or world state.
 - Public journey pages expose the drawing sequence but never private handoff or receipt capabilities.
+- NSFW image endpoints deny access by default; the public gallery, journey viewer, private handoffs and world queue require an explicit opt-in that is stored only in that browser.
 - A browser voter token prevents repeated votes from the same browser and is stored only as a hash on the server.
 - No raw IP address, identity, account or email is stored. Location is optional and contributor-provided; it may be a country, city or precise coordinates.
 
@@ -64,8 +66,8 @@ npm run build
 npm run test:e2e
 ```
 
-The Playwright suite uses fresh browser contexts to simulate separate anonymous phones. It covers navigation, drawing tools, open loops, private passing, world-mode continuity, public previews, location inheritance and one-vote-per-browser behavior.
+The Playwright suite uses fresh browser contexts to simulate separate anonymous phones. It covers navigation, drawing tools, open loops, private passing, world-mode continuity, NSFW opt-in boundaries, public previews, location inheritance and one-vote-per-browser behavior.
 
 ## Honest MVP boundary
 
-The world queue includes a report-and-skip action, but a larger public launch still needs operational moderation, abuse monitoring, retention rules and a production privacy/legal review. No claim is made that screenshots can be prevented during the one-time observation.
+The world queue includes a report-and-skip action, but NSFW labels are contributor-provided rather than automatic moderation. A larger public launch still needs operational moderation, abuse monitoring, retention rules and a production privacy/legal review. No claim is made that screenshots can be prevented during the one-time observation.

@@ -7,12 +7,18 @@ const createJourneySchema = z.object({
   imageDataUrl: z.string().min(100).max(1_500_000),
   targetParticipants: z.union([z.number().int().min(2).max(50), z.literal('infinite')]),
   location: drawingLocationSchema.optional().nullable(),
+  isNsfw: z.boolean().default(false),
 });
 
 export async function POST(request: Request) {
   try {
     const input = createJourneySchema.parse(await request.json());
-    return apiJson(await createJourney(input.imageDataUrl, input.targetParticipants, input.location), {
+    return apiJson(await createJourney(
+      input.imageDataUrl,
+      input.targetParticipants,
+      input.location,
+      input.isNsfw,
+    ), {
       status: 201,
     });
   } catch (error) {

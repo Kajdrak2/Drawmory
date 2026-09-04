@@ -9,6 +9,8 @@ import { DocumentLink } from './document-link';
 import { JourneyMap } from './journey-map';
 import { useLanguage } from './language-provider';
 import { SiteHeader } from './site-header';
+import { useContentPreferences } from './content-preferences';
+import { NsfwPlaceholder } from './nsfw-controls';
 
 export type PublicJourney = {
   publicSlug: string;
@@ -31,7 +33,8 @@ export type PublicJourney = {
     createdAt: number;
     width: number;
     height: number;
-    imageUrl: string;
+    imageUrl: string | null;
+    isNsfw: boolean;
   }>;
 };
 
@@ -52,6 +55,7 @@ export function JourneyReveal({
   initialJourney: PublicJourney;
 }) {
   const { t } = useLanguage();
+  const { showNsfw } = useContentPreferences();
   const lastLoadedJourneyRef = useRef<PublicJourney | null>(initialJourney);
   const [journey, setJourney] = useState<PublicJourney | null>(initialJourney);
   const [activeIndex, setActiveIndex] = useState(0);
@@ -64,7 +68,9 @@ export function JourneyReveal({
   useEffect(() => {
     let active = true;
     const load = () => {
-      apiFetch<PublicJourney>(`/api/public/journeys/${encodeURIComponent(publicSlug)}`)
+      apiFetch<PublicJourney>(
+        `/api/public/journeys/${encodeURIComponent(publicSlug)}?includeNsfw=${showNsfw ? 1 : 0}`,
+      )
         .then((result) => {
           if (!active) return;
           const previousMapIndex = lastLoadedJourneyRef.current?.drawings.length;
@@ -86,7 +92,7 @@ export function JourneyReveal({
       active = false;
       window.clearInterval(interval);
     };
-  }, [publicSlug, t]);
+  }, [publicSlug, showNsfw, t]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => setVoted(readVotedJourneys().has(publicSlug)), 0);
@@ -203,7 +209,9 @@ export function JourneyReveal({
             <div className={`flipbook-image${isMapSlide ? ' flipbook-map-slide' : ''}`} data-testid={isMapSlide ? 'journey-map-slide' : undefined}>
               {isMapSlide ? (
                 <JourneyMap drawings={journey.drawings} compact />
-              ) : current ? (
+              ) : current?.isNsfw && (!showNsfw || !current.imageUrl) ? (
+                <NsfwPlaceholder />
+              ) : current?.imageUrl ? (
                 <img key={current.id} src={current.imageUrl} alt={current.stepIndex === 0 ? t('original') : t('redraw', { step: current.stepIndex })} />
               ) : null}
               <span className="frame-label">{isMapSlide ? t('journeyMap') : current?.stepIndex === 0 ? t('original') : t('redraw', { step: current?.stepIndex ?? 0 })}</span>
@@ -220,7 +228,11 @@ export function JourneyReveal({
           <div className="mural-grid" aria-label={t('muralView')}>
             {journey.drawings.map((drawing) => (
               <figure key={drawing.id}>
-                <img src={drawing.imageUrl} alt={drawing.stepIndex === 0 ? t('original') : t('redraw', { step: drawing.stepIndex })} />
+                {drawing.isNsfw && (!showNsfw || !drawing.imageUrl) ? (
+                  <NsfwPlaceholder compact />
+                ) : drawing.imageUrl ? (
+                  <img src={drawing.imageUrl} alt={drawing.stepIndex === 0 ? t('original') : t('redraw', { step: drawing.stepIndex })} />
+                ) : null}
                 <figcaption>{drawing.stepIndex === 0 ? t('original') : t('redraw', { step: drawing.stepIndex })}</figcaption>
               </figure>
             ))}
@@ -234,7 +246,10 @@ export function JourneyReveal({
         <div className="timeline-strip" aria-label={t('drawingHidden')}>
           {journey.drawings.map((drawing, index) => (
             <button key={drawing.id} type="button" className={index === activeIndex ? 'active' : ''} onClick={() => { setActiveIndex(index); setPlaying(false); setView('book'); }} aria-label={drawing.stepIndex === 0 ? t('original') : t('redraw', { step: drawing.stepIndex })}>
-              <img src={drawing.imageUrl} alt="" /><span>{drawing.stepIndex}</span>
+              {drawing.isNsfw && (!showNsfw || !drawing.imageUrl) ? (
+                <NsfwPlaceholder compact />
+              ) : drawing.imageUrl ? <img src={drawing.imageUrl} alt="" /> : null}
+              <span>{drawing.stepIndex}</span>
             </button>
           ))}
           <button type="button" className={`timeline-map-button${isMapSlide ? ' active' : ''}`} onClick={() => { setActiveIndex(mapSlideIndex); setPlaying(false); setView('book'); }} aria-label={t('journeyMap')} data-testid="journey-map-thumbnail">

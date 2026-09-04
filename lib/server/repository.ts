@@ -70,11 +70,17 @@ type DrawingRow = {
   latitude: number | null;
   longitude: number | null;
   location_precision: JourneyLocation['locationPrecision'];
+  is_nsfw: number;
   created_at: number;
 };
 
 export type PublicJourneyFilter = 'all' | 'completed' | 'in_progress';
 export type PublicJourneySort = 'random' | 'newest' | 'oldest' | 'progress' | 'votes' | 'distance';
+
+function publicDrawingUrl(publicSlug: string, drawingId: string, includeNsfw: boolean) {
+  const path = `/api/public/journeys/${encodeURIComponent(publicSlug)}/drawings/${encodeURIComponent(drawingId)}`;
+  return includeNsfw ? `${path}?includeNsfw=1` : path;
+}
 
 export class HttpError extends Error {
   constructor(
@@ -207,6 +213,7 @@ export async function createJourney(
   imageDataUrl: string,
   targetParticipants: number | 'infinite',
   location?: DrawingLocationInput | null,
+  isNsfw = false,
 ) {
   await ensureSchema();
   if (
@@ -249,8 +256,8 @@ export async function createJourney(
           `INSERT INTO drawings (
             id, journey_id, step_index, storage_path, mime_type, width, height,
             byte_size, sha256, country_code, city, latitude, longitude,
-            location_precision, created_at
-          ) VALUES (?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            location_precision, is_nsfw, created_at
+          ) VALUES (?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         )
         .bind(
           drawingId,
@@ -266,6 +273,7 @@ export async function createJourney(
           drawingLocation.latitude,
           drawingLocation.longitude,
           drawingLocation.locationPrecision,
+          isNsfw ? 1 : 0,
           now,
         ),
       database
@@ -355,7 +363,7 @@ export async function chooseHandoff(
     : { mode, publicSlug: journey.public_slug };
 }
 
-export async function createWorldOffer() {
+export async function createWorldOffer(includeNsfw = false) {
   await ensureSchema();
   await releaseAllExpiredJourneys();
   const database = getDatabase();
@@ -363,11 +371,14 @@ export async function createWorldOffer() {
   for (let attempt = 0; attempt < 3; attempt += 1) {
     const journey = await database
       .prepare(
-        `SELECT * FROM journeys
-         WHERE status = 'AVAILABLE_WORLD' AND flagged = 0
-         ORDER BY updated_at ASC LIMIT 1`,
+        `SELECT j.*, d.is_nsfw AS current_is_nsfw
+         FROM journeys j JOIN drawings d ON d.id = j.current_drawing_id
+         WHERE j.status = 'AVAILABLE_WORLD' AND j.flagged = 0
+           AND (? = 1 OR d.is_nsfw = 0)
+         ORDER BY j.updated_at ASC LIMIT 1`,
       )
-      .first<JourneyRow>();
+      .bind(includeNsfw ? 1 : 0)
+      .first<JourneyRow & { current_is_nsfw: number }>();
     if (!journey) return null;
 
     const now = Date.now();
@@ -380,10 +391,12 @@ export async function createWorldOffer() {
         `INSERT INTO handoffs (
           id, journey_id, mode, token_hash, code_hash, status, created_at, claimed_at, expires_at
         )
-        SELECT ?, id, 'WORLD_OFFER', ?, NULL, 'READY', ?, NULL, ?
-        FROM journeys WHERE id = ? AND status = 'AVAILABLE_WORLD' AND flagged = 0`,
+        SELECT ?, j.id, 'WORLD_OFFER', ?, NULL, 'READY', ?, NULL, ?
+        FROM journeys j JOIN drawings d ON d.id = j.current_drawing_id
+        WHERE j.id = ? AND j.status = 'AVAILABLE_WORLD' AND j.flagged = 0
+          AND (? = 1 OR d.is_nsfw = 0)`,
       )
-      .bind(handoffId, tokenHash, now, expiresAt, journey.id)
+      .bind(handoffId, tokenHash, now, expiresAt, journey.id, includeNsfw ? 1 : 0)
       .run();
     if (changes(result) === 1) {
       return {
@@ -393,6 +406,7 @@ export async function createWorldOffer() {
           publicSlug: journey.public_slug,
           redrawCount: journey.redraw_count,
           targetRedraws: journey.target_redraws,
+          isNsfw: Boolean(journey.current_is_nsfw),
         },
       };
     }
@@ -411,8 +425,10 @@ async function findHandoff(secret: { token?: string; code?: string }) {
   let row = await database
     .prepare(
       `SELECT h.*, j.public_slug, j.status AS journey_status, j.target_redraws,
-              j.redraw_count, j.reservation_expires_at, j.flagged
+              j.redraw_count, j.reservation_expires_at, j.flagged,
+              d.is_nsfw AS current_is_nsfw
        FROM handoffs h JOIN journeys j ON j.id = h.journey_id
+       JOIN drawings d ON d.id = j.current_drawing_id
        WHERE h.${column} = ?`,
     )
     .bind(secretHash)
@@ -424,6 +440,7 @@ async function findHandoff(secret: { token?: string; code?: string }) {
         redraw_count: number;
         reservation_expires_at: number | null;
         flagged: number;
+        current_is_nsfw: number;
       }
     >();
   if (!row) return null;
@@ -432,8 +449,10 @@ async function findHandoff(secret: { token?: string; code?: string }) {
     row = await database
       .prepare(
         `SELECT h.*, j.public_slug, j.status AS journey_status, j.target_redraws,
-                j.redraw_count, j.reservation_expires_at, j.flagged
+                j.redraw_count, j.reservation_expires_at, j.flagged,
+                d.is_nsfw AS current_is_nsfw
          FROM handoffs h JOIN journeys j ON j.id = h.journey_id
+         JOIN drawings d ON d.id = j.current_drawing_id
          WHERE h.${column} = ?`,
       )
       .bind(secretHash)
@@ -474,10 +493,14 @@ export async function previewHandoff(secret: { token?: string; code?: string }) 
     targetRedraws: handoff.target_redraws,
     expiresAt: handoff.expires_at,
     mode: handoff.mode === 'PRIVATE' ? 'PRIVATE' : 'WORLD',
+    isNsfw: Boolean(handoff.current_is_nsfw),
   };
 }
 
-export async function claimHandoff(secret: { token?: string; code?: string }) {
+export async function claimHandoff(
+  secret: { token?: string; code?: string },
+  includeNsfw = false,
+) {
   await ensureSchema();
   const handoff = await findHandoff(secret);
   if (!handoff) {
@@ -488,6 +511,9 @@ export async function claimHandoff(secret: { token?: string; code?: string }) {
   }
   if (handoff.status !== 'READY') {
     throw new HttpError(409, 'HANDOFF_USED', 'Someone else already carried this Drawmory.');
+  }
+  if (handoff.current_is_nsfw && !includeNsfw) {
+    throw new HttpError(403, 'NSFW_FILTERED', 'Enable NSFW drawings before carrying this Drawmory.');
   }
 
   const expectedStatus = handoff.mode === 'PRIVATE' ? 'AVAILABLE_PRIVATE' : 'AVAILABLE_WORLD';
@@ -516,7 +542,9 @@ export async function claimHandoff(secret: { token?: string; code?: string }) {
         )
         SELECT ?, j.id, h.id, ?, NULL, ?, NULL, NULL, NULL, ?
         FROM journeys j JOIN handoffs h ON h.journey_id = j.id
+        JOIN drawings d ON d.id = j.current_drawing_id
         WHERE j.id = ? AND h.id = ? AND j.status = ? AND j.flagged = 0
+          AND (? = 1 OR d.is_nsfw = 0)
           AND h.status = 'READY' AND (h.expires_at IS NULL OR h.expires_at > ?)`,
       )
       .bind(
@@ -527,6 +555,7 @@ export async function claimHandoff(secret: { token?: string; code?: string }) {
         handoff.journey_id,
         handoff.id,
         expectedStatus,
+        includeNsfw ? 1 : 0,
         now,
       ),
     database
@@ -593,12 +622,13 @@ async function authenticatedClaim(request: Request, claimId: string) {
     .prepare(
       `SELECT c.*, j.public_slug, j.status AS journey_status, j.target_redraws,
               j.redraw_count, j.current_drawing_id, j.reservation_expires_at AS journey_expires_at,
-              j.handoff_mode, d.storage_path, d.mime_type, d.country_code, d.city,
-              d.latitude, d.longitude, d.location_precision,
-              cd.drawing_id AS draft_drawing_id, cd.storage_path AS draft_storage_path,
-              cd.mime_type AS draft_mime_type, cd.width AS draft_width,
-              cd.height AS draft_height, cd.byte_size AS draft_byte_size,
-              cd.sha256 AS draft_sha256, cd.validated_at AS draft_validated_at
+               j.handoff_mode, d.storage_path, d.mime_type, d.country_code, d.city,
+               d.latitude, d.longitude, d.location_precision, d.is_nsfw,
+               cd.drawing_id AS draft_drawing_id, cd.storage_path AS draft_storage_path,
+               cd.mime_type AS draft_mime_type, cd.width AS draft_width,
+               cd.height AS draft_height, cd.byte_size AS draft_byte_size,
+               cd.sha256 AS draft_sha256, cd.is_nsfw AS draft_is_nsfw,
+               cd.validated_at AS draft_validated_at
        FROM claims c JOIN journeys j ON j.id = c.journey_id
        JOIN drawings d ON d.id = j.current_drawing_id
        LEFT JOIN claim_drafts cd ON cd.claim_id = c.id
@@ -621,6 +651,7 @@ async function authenticatedClaim(request: Request, claimId: string) {
         latitude: number | null;
         longitude: number | null;
         location_precision: JourneyLocation['locationPrecision'];
+        is_nsfw: number;
         draft_drawing_id: string | null;
         draft_storage_path: string | null;
         draft_mime_type: 'image/png' | 'image/webp' | null;
@@ -628,6 +659,7 @@ async function authenticatedClaim(request: Request, claimId: string) {
         draft_height: number | null;
         draft_byte_size: number | null;
         draft_sha256: string | null;
+        draft_is_nsfw: number | null;
         draft_validated_at: number | null;
       }
     >();
@@ -681,6 +713,7 @@ export async function getClaimState(request: Request, claimId: string) {
     drawingExpiresAt: deadlines.drawingExpiresAt,
     confirmationExpiresAt: deadlines.confirmationExpiresAt,
     imageUrl: phase === 'observing' ? `/api/claims/${claim.id}/image` : null,
+    isNsfw: Boolean(claim.is_nsfw),
   };
 }
 
@@ -724,11 +757,14 @@ export async function startReveal(request: Request, claimId: string) {
   return getClaimState(request, claimId);
 }
 
-export async function getClaimImage(request: Request, claimId: string) {
+export async function getClaimImage(request: Request, claimId: string, includeNsfw = false) {
   await ensureSchema();
   const claim = await authenticatedClaim(request, claimId);
   if (phaseForClaim(claim) !== 'observing') {
     throw new HttpError(410, 'OBSERVATION_ENDED', 'The one-time observation has ended.');
+  }
+  if (claim.is_nsfw && !includeNsfw) {
+    throw new HttpError(404, 'DRAWING_NOT_FOUND', 'This drawing is hidden by the NSFW filter.');
   }
   const object = await getFiles().get(claim.storage_path);
   if (!object) {
@@ -741,6 +777,7 @@ export async function validateClaimDrawing(
   request: Request,
   claimId: string,
   imageDataUrl: string,
+  isNsfw = false,
 ) {
   await ensureSchema();
   const claim = await authenticatedClaim(request, claimId);
@@ -784,9 +821,9 @@ export async function validateClaimDrawing(
         .prepare(
           `INSERT OR IGNORE INTO claim_drafts (
             claim_id, journey_id, drawing_id, storage_path, mime_type, width,
-            height, byte_size, sha256, validated_at
+            height, byte_size, sha256, is_nsfw, validated_at
           )
-          SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+          SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
           WHERE EXISTS (
             SELECT 1 FROM claims c JOIN journeys j ON j.id = c.journey_id
             WHERE c.id = ? AND c.submitted_at IS NULL AND c.cancelled_at IS NULL
@@ -804,6 +841,7 @@ export async function validateClaimDrawing(
           image.height,
           image.bytes.byteLength,
           image.sha256,
+          isNsfw ? 1 : 0,
           now,
           claimId,
           now,
@@ -897,9 +935,9 @@ export async function submitRedraw(
         `INSERT INTO drawings (
           id, journey_id, step_index, storage_path, mime_type, width, height,
           byte_size, sha256, country_code, city, latitude, longitude,
-          location_precision, created_at
+          location_precision, is_nsfw, created_at
         )
-        SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+        SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
         WHERE EXISTS (
           SELECT 1 FROM claims c JOIN journeys j ON j.id = c.journey_id
           JOIN claim_drafts cd ON cd.claim_id = c.id
@@ -923,6 +961,7 @@ export async function submitRedraw(
         drawingLocation.latitude,
         drawingLocation.longitude,
         drawingLocation.locationPrecision,
+        claim.draft_is_nsfw ?? 0,
         now,
         claimId,
         now,
@@ -1046,6 +1085,7 @@ export async function listPublicJourneys(options: {
   status: PublicJourneyFilter;
   sort: PublicJourneySort;
   limit: number;
+  includeNsfw?: boolean;
 }) {
   await ensureSchema();
   await releaseAllExpiredJourneys();
@@ -1076,6 +1116,7 @@ export async function listPublicJourneys(options: {
     updated_at: number;
     completed_at: number | null;
     current_drawing_id: string | null;
+    current_is_nsfw: number | null;
     vote_count: number;
   };
 
@@ -1083,9 +1124,10 @@ export async function listPublicJourneys(options: {
   const listStatement = database.prepare(
     `SELECT j.id, j.public_slug, j.status, j.target_redraws, j.redraw_count,
             j.created_at, j.updated_at, j.completed_at, j.current_drawing_id,
-            COUNT(v.id) AS vote_count
+            current_drawing.is_nsfw AS current_is_nsfw, COUNT(v.id) AS vote_count
      FROM journeys j
      LEFT JOIN journey_votes v ON v.journey_id = j.id
+     LEFT JOIN drawings current_drawing ON current_drawing.id = j.current_drawing_id
      WHERE j.flagged = 0 AND j.status != 'EXPIRED' ${statusClause}
      GROUP BY j.id
      ORDER BY ${orderClause[options.sort]}
@@ -1175,10 +1217,10 @@ export async function listPublicJourneys(options: {
   const previewRows = await database
     .prepare(
       `SELECT id, journey_id, step_index, country_code, city, latitude, longitude,
-              location_precision, created_at
+              location_precision, is_nsfw, created_at
        FROM (
          SELECT id, journey_id, step_index, country_code, city, latitude, longitude,
-                location_precision, created_at,
+                location_precision, is_nsfw, created_at,
                 ROW_NUMBER() OVER (PARTITION BY journey_id ORDER BY step_index DESC) AS preview_rank
          FROM drawings WHERE journey_id IN (${placeholders})
        )
@@ -1196,6 +1238,7 @@ export async function listPublicJourneys(options: {
       | 'latitude'
       | 'longitude'
       | 'location_precision'
+      | 'is_nsfw'
       | 'created_at'
     >>();
   const previewsByJourney = new Map<string, typeof previewRows.results>();
@@ -1224,7 +1267,11 @@ export async function listPublicJourneys(options: {
       longitude: drawing.longitude,
       locationPrecision: drawing.location_precision,
       createdAt: drawing.created_at,
-      imageUrl: `/api/public/journeys/${encodeURIComponent(journey.public_slug)}/drawings/${encodeURIComponent(drawing.id)}`,
+      isNsfw: Boolean(drawing.is_nsfw),
+      imageUrl:
+        drawing.is_nsfw && !options.includeNsfw
+          ? null
+          : publicDrawingUrl(journey.public_slug, drawing.id, Boolean(options.includeNsfw)),
     }));
     const distance = distancesByJourney.get(journey.id) ?? { distanceKm: null, approximate: false };
     return {
@@ -1240,9 +1287,10 @@ export async function listPublicJourneys(options: {
       distanceKm: distance.distanceKm,
       distanceApproximate: distance.approximate,
       routePoints,
+      coverIsNsfw: Boolean(journey.current_is_nsfw),
       coverImageUrl:
-        journey.current_drawing_id
-          ? `/api/public/journeys/${encodeURIComponent(journey.public_slug)}/drawings/${encodeURIComponent(journey.current_drawing_id)}`
+        journey.current_drawing_id && (!journey.current_is_nsfw || options.includeNsfw)
+          ? publicDrawingUrl(journey.public_slug, journey.current_drawing_id, Boolean(options.includeNsfw))
           : null,
       drawingPreviews,
     };
@@ -1303,7 +1351,7 @@ export async function voteForJourney(publicSlug: string, voterToken: string) {
   };
 }
 
-export async function getPublicJourney(publicSlug: string) {
+export async function getPublicJourney(publicSlug: string, includeNsfw = false) {
   await ensureSchema();
   let journey = await getDatabase()
     .prepare(`SELECT * FROM journeys WHERE public_slug = ?`)
@@ -1330,7 +1378,7 @@ export async function getPublicJourney(publicSlug: string) {
     await getDatabase()
       .prepare(
         `SELECT id, step_index, country_code, city, latitude, longitude,
-                location_precision, created_at, width, height
+                location_precision, is_nsfw, created_at, width, height
          FROM drawings WHERE journey_id = ? ORDER BY step_index ASC`,
       )
       .bind(journey.id)
@@ -1343,6 +1391,7 @@ export async function getPublicJourney(publicSlug: string) {
         | 'latitude'
         | 'longitude'
         | 'location_precision'
+        | 'is_nsfw'
         | 'created_at'
         | 'width'
         | 'height'
@@ -1358,7 +1407,11 @@ export async function getPublicJourney(publicSlug: string) {
           createdAt: drawing.created_at,
           width: drawing.width,
           height: drawing.height,
-          imageUrl: `/api/public/journeys/${encodeURIComponent(publicSlug)}/drawings/${drawing.id}`,
+          isNsfw: Boolean(drawing.is_nsfw),
+          imageUrl:
+            drawing.is_nsfw && !includeNsfw
+              ? null
+              : publicDrawingUrl(publicSlug, drawing.id, includeNsfw),
         }));
 
   const countryCount = new Set(
@@ -1383,7 +1436,11 @@ export async function getPublicJourney(publicSlug: string) {
   };
 }
 
-export async function getPublicDrawing(publicSlug: string, drawingId: string) {
+export async function getPublicDrawing(
+  publicSlug: string,
+  drawingId: string,
+  includeNsfw = false,
+) {
   await ensureSchema();
   const drawing = await getDatabase()
     .prepare(
@@ -1395,11 +1452,14 @@ export async function getPublicDrawing(publicSlug: string, drawingId: string) {
   if (!drawing) {
     throw new HttpError(404, 'DRAWING_NOT_FOUND', 'This drawing is not available.');
   }
+  if (drawing.is_nsfw && !includeNsfw) {
+    throw new HttpError(404, 'DRAWING_NOT_FOUND', 'This drawing is hidden by the NSFW filter.');
+  }
   const object = await getFiles().get(drawing.storage_path);
   if (!object) {
     throw new HttpError(404, 'DRAWING_MISSING', 'The drawing could not be found.');
   }
-  return { body: object.body, mimeType: drawing.mime_type };
+  return { body: object.body, mimeType: drawing.mime_type, isNsfw: Boolean(drawing.is_nsfw) };
 }
 
 export async function reportClaim(request: Request, claimId: string) {

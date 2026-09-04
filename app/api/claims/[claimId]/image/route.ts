@@ -7,7 +7,8 @@ export async function GET(
 ) {
   try {
     const { claimId } = await context.params;
-    const image = await getClaimImage(request, claimId);
+    const includeNsfw = new URL(request.url).searchParams.get('includeNsfw') === '1';
+    const image = await getClaimImage(request, claimId, includeNsfw);
     return new Response(image.body, {
       headers: {
         'Cache-Control': 'no-store, no-cache, must-revalidate',

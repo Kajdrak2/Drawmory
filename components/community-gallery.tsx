@@ -9,6 +9,8 @@ import { useLanguage } from './language-provider';
 import { getOrCreateVoterToken, readVotedJourneys, rememberVote } from '@/lib/client/voting';
 import { getLanguageOption } from '@/lib/i18n';
 import { JourneyMap } from './journey-map';
+import { useContentPreferences } from './content-preferences';
+import { NsfwPlaceholder } from './nsfw-controls';
 
 export type JourneyCardData = {
   publicSlug: string;
@@ -22,6 +24,7 @@ export type JourneyCardData = {
   distanceKm: number | null;
   distanceApproximate: boolean;
   coverImageUrl: string | null;
+  coverIsNsfw: boolean;
   routePoints: Array<{
     id: string;
     stepIndex: number;
@@ -36,7 +39,8 @@ export type JourneyCardData = {
     stepIndex: number;
     countryCode: string;
     city: string | null;
-    imageUrl: string;
+    imageUrl: string | null;
+    isNsfw: boolean;
   }>;
 };
 
@@ -52,6 +56,7 @@ export function CommunityGallery({
   initialHall?: JourneyCardData[] | null;
 }) {
   const { language, t } = useLanguage();
+  const { showNsfw } = useContentPreferences();
   const carouselRef = useRef<HTMLDivElement>(null);
   const [status, setStatus] = useState<StatusFilter>('all');
   const [sort, setSort] = useState<SortFilter>('random');
@@ -71,7 +76,7 @@ export function CommunityGallery({
   useEffect(() => {
     let active = true;
     apiFetch<JourneyListResponse>(
-      `/api/public/journeys?status=${status}&sort=${sort}&limit=14&shuffle=${shuffle}`,
+      `/api/public/journeys?status=${status}&sort=${sort}&limit=14&shuffle=${shuffle}&includeNsfw=${showNsfw ? 1 : 0}`,
     )
       .then((result) => {
         if (active) setLibrary(result.items);
@@ -85,11 +90,11 @@ export function CommunityGallery({
     return () => {
       active = false;
     };
-  }, [shuffle, sort, status, t]);
+  }, [showNsfw, shuffle, sort, status, t]);
 
   useEffect(() => {
     let active = true;
-    apiFetch<JourneyListResponse>('/api/public/journeys?status=all&sort=votes&limit=6')
+    apiFetch<JourneyListResponse>(`/api/public/journeys?status=all&sort=votes&limit=6&includeNsfw=${showNsfw ? 1 : 0}`)
       .then((result) => {
         if (active) setHall(result.items);
       })
@@ -102,7 +107,7 @@ export function CommunityGallery({
     return () => {
       active = false;
     };
-  }, [t]);
+  }, [showNsfw, t]);
 
   const vote = async (journey: JourneyCardData) => {
     if (voting || votedJourneys.has(journey.publicSlug)) return;
@@ -126,7 +131,7 @@ export function CommunityGallery({
       );
       setVotedJourneys(rememberVote(journey.publicSlug));
       void apiFetch<JourneyListResponse>(
-        '/api/public/journeys?status=all&sort=votes&limit=6',
+        `/api/public/journeys?status=all&sort=votes&limit=6&includeNsfw=${showNsfw ? 1 : 0}`,
       ).then((refreshed) => setHall(refreshed.items), () => undefined);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : t('voteSaveFailed'));
@@ -168,7 +173,10 @@ export function CommunityGallery({
     const activePreviewIndex = Math.min(previewIndexes[journey.publicSlug] ?? 0, previewSlideCount - 1);
     const isMapPreview = activePreviewIndex === mapPreviewIndex;
     const activePreview = isMapPreview ? undefined : previews[activePreviewIndex];
-    const previewImageUrl = activePreview?.imageUrl ?? journey.coverImageUrl;
+    const previewImageUrl = activePreview ? activePreview.imageUrl : journey.coverImageUrl;
+    const previewHiddenNsfw = activePreview
+      ? activePreview.isNsfw && !showNsfw
+      : journey.coverIsNsfw && !showNsfw;
     const movePreview = (direction: -1 | 1) => {
       setPreviewIndexes((current) => ({
         ...current,
@@ -189,6 +197,8 @@ export function CommunityGallery({
             <div className="journey-card-map" data-testid={`journey-card-map-${journey.publicSlug}`}>
               <JourneyMap drawings={journey.routePoints ?? previews} compact preview />
             </div>
+          ) : previewHiddenNsfw ? (
+            <NsfwPlaceholder compact />
           ) : previewImageUrl ? (
             <img src={previewImageUrl} alt="" loading="lazy" />
           ) : (

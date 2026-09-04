@@ -25,6 +25,7 @@ async function fillCanvas(page: Page) {
 }
 
 test('the home screen shows and opens every starting route on mobile', async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 844 });
   await page.goto('/');
 
   const createLink = page.getByRole('link', { name: 'Create', exact: true });
@@ -46,6 +47,7 @@ test('the home screen shows and opens every starting route on mobile', async ({ 
   await expect(page.locator('link[rel="manifest"]')).toHaveAttribute('href', '/manifest.webmanifest');
   await expect(page.locator('script[type="application/ld+json"]')).toHaveCount(1);
   await expect(page.locator('link[rel="icon"][href="/favicon.ico?v=7"]')).toHaveCount(1);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   const faviconResponse = await page.request.get('/favicon.ico?v=7');
   expect(faviconResponse.ok()).toBeTruthy();
   expect(faviconResponse.headers()['content-type']).toMatch(/image\/(x-icon|vnd\.microsoft\.icon)/);
@@ -428,6 +430,108 @@ test('a world journey keeps travelling automatically, stays public, inherits loc
   await creatorContext.close();
   await firstCarrierContext.close();
   await finalCarrierContext.close();
+});
+
+test('NSFW drawings are opt-in for publishing, browsing and world reception', async ({ browser }) => {
+  const creatorContext = await browser.newContext({ viewport: { width: 390, height: 844 } });
+  const creator = await creatorContext.newPage();
+  await creator.goto('/create');
+  await fillCanvas(creator);
+  await creator.getByTestId('mark-nsfw').check({ force: true });
+  await creator.getByRole('button', { name: /Continue/i }).click();
+  await creator.getByLabel('Custom number of participants').fill('3');
+  await creator.getByTestId('launch-journey').click();
+  await expect(creator).toHaveURL(/\/pass\//);
+  const publicSlug = await creator.evaluate(() => {
+    const receipts = JSON.parse(localStorage.getItem('drawmoryReceipts') ?? '[]') as Array<{ publicSlug?: string }>;
+    return receipts[0]?.publicSlug ?? '';
+  });
+  expect(publicSlug).not.toBe('');
+  await creator.getByTestId('world-handoff').click();
+
+  const hiddenResponse = await creator.request.get(`/api/public/journeys/${publicSlug}`);
+  expect(hiddenResponse.ok()).toBeTruthy();
+  const hiddenJourney = await hiddenResponse.json() as {
+    drawings: Array<{ id: string; isNsfw: boolean; imageUrl: string | null }>;
+  };
+  expect(hiddenJourney.drawings).toHaveLength(1);
+  expect(hiddenJourney.drawings[0]).toMatchObject({ isNsfw: true, imageUrl: null });
+
+  const visibleResponse = await creator.request.get(
+    `/api/public/journeys/${publicSlug}?includeNsfw=1`,
+  );
+  const visibleJourney = await visibleResponse.json() as {
+    drawings: Array<{ id: string; isNsfw: boolean; imageUrl: string }>;
+  };
+  const visibleImageUrl = visibleJourney.drawings[0]?.imageUrl;
+  expect(visibleImageUrl).toContain('includeNsfw=1');
+  const hiddenImageResponse = await creator.request.get(visibleImageUrl.split('?')[0]);
+  expect(hiddenImageResponse.status()).toBe(404);
+  const visibleImageResponse = await creator.request.get(visibleImageUrl);
+  expect(visibleImageResponse.ok()).toBeTruthy();
+  expect(visibleImageResponse.headers()['x-robots-tag']).toBe('noindex, nofollow');
+
+  const carrierContext = await browser.newContext({ viewport: { width: 390, height: 844 } });
+  const carrier = await carrierContext.newPage();
+  await carrier.goto('/receive');
+  await expect(carrier.getByTestId('show-nsfw-toggle')).not.toBeChecked();
+  await carrier.getByTestId('receive-world').click();
+  await expect(carrier.getByText('No compatible drawings are available with this filter.')).toBeVisible();
+
+  await carrier.getByTestId('show-nsfw-toggle').check({ force: true });
+  await carrier.reload();
+  await expect(carrier.getByTestId('show-nsfw-toggle')).toBeChecked();
+  await carrier.getByTestId('receive-world').click();
+  await expect(carrier.getByTestId('carry-it')).toBeEnabled();
+  await carrier.getByTestId('carry-it').click();
+  await carrier.getByTestId('start-reveal').click();
+  await expect(carrier.getByRole('img', { name: 'Drawing to remember' })).toBeVisible();
+  await expect(carrier.getByTestId('drawing-canvas')).toBeVisible({ timeout: 15_000 });
+  await addStroke(carrier);
+  await carrier.getByTestId('mark-nsfw').check({ force: true });
+  await carrier.getByTestId('submit-redraw').click();
+  await expect(carrier.getByTestId('location-step')).toBeVisible();
+  await carrier.getByTestId('skip-location').click();
+  await expect(carrier).toHaveURL(/\/receipt\//);
+
+  const updatedResponse = await carrier.request.get(`/api/public/journeys/${publicSlug}`);
+  const updatedJourney = await updatedResponse.json() as {
+    drawings: Array<{ isNsfw: boolean; imageUrl: string | null }>;
+  };
+  expect(updatedJourney.drawings).toHaveLength(2);
+  expect(updatedJourney.drawings.every((drawing) => drawing.isNsfw && drawing.imageUrl === null)).toBeTruthy();
+
+  const filteredOffer = await carrier.request.post('/api/world/offer', {
+    data: { includeNsfw: false },
+  });
+  expect(filteredOffer.status()).toBe(404);
+  const optedInOffer = await carrier.request.post('/api/world/offer', {
+    data: { includeNsfw: true },
+  });
+  expect(optedInOffer.status()).toBe(201);
+  expect((await optedInOffer.json()).journey).toMatchObject({ publicSlug, isNsfw: true });
+
+  const viewerContext = await browser.newContext({ viewport: { width: 390, height: 844 } });
+  const viewer = await viewerContext.newPage();
+  const drawingRequests: string[] = [];
+  viewer.on('request', (request) => {
+    if (request.url().includes(`/api/public/journeys/${publicSlug}/drawings/`)) {
+      drawingRequests.push(request.url());
+    }
+  });
+  await viewer.goto(`/journey/${publicSlug}`);
+  await expect(viewer.getByTestId('show-nsfw-toggle')).not.toBeChecked();
+  await expect(viewer.getByTestId('show-nsfw-toggle')).toBeEnabled();
+  await expect(viewer.locator('.timeline-strip button')).toHaveCount(3);
+  await expect(viewer.locator('.timeline-strip .nsfw-placeholder')).toHaveCount(2);
+  expect(drawingRequests).toEqual([]);
+  await viewer.getByTestId('show-nsfw-toggle').check({ force: true });
+  await expect(viewer.locator('.timeline-strip img')).toHaveCount(2, { timeout: 15_000 });
+  expect(drawingRequests.length).toBeGreaterThan(0);
+
+  await creatorContext.close();
+  await carrierContext.close();
+  await viewerContext.close();
 });
 
 test('ten-minute drawing logic opens a confirmation window, then releases the same step', async ({

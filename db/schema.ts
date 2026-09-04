@@ -40,6 +40,7 @@ export const drawings = sqliteTable(
     latitude: real('latitude'),
     longitude: real('longitude'),
     locationPrecision: text('location_precision').notNull().default('NONE'),
+    isNsfw: integer('is_nsfw').notNull().default(0),
     createdAt: integer('created_at').notNull(),
   },
   (table) => [
@@ -100,6 +101,7 @@ export const claimDrafts = sqliteTable(
     height: integer('height').notNull(),
     byteSize: integer('byte_size').notNull(),
     sha256: text('sha256').notNull(),
+    isNsfw: integer('is_nsfw').notNull().default(0),
     validatedAt: integer('validated_at').notNull(),
   },
   (table) => [index('idx_claim_drafts_journey').on(table.journeyId)],

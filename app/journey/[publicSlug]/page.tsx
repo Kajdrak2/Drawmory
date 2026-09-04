@@ -27,9 +27,9 @@ export async function generateMetadata({
       journey.status === 'COMPLETED'
         ? `A completed collaborative drawing journey with ${journey.participantCount} memories across ${journey.countryCount} ${journey.countryCount === 1 ? 'country' : 'countries'}.`
         : `An ongoing collaborative drawing journey with ${journey.participantCount} ${journey.participantCount === 1 ? 'memory' : 'memories'}.`;
-    const previewImage = journey.drawings.at(-1);
+    const previewImage = [...journey.drawings].reverse().find((drawing) => drawing.imageUrl);
     const canonicalPath = `/journey/${encodeURIComponent(publicSlug)}`;
-    const images = previewImage
+    const images = previewImage?.imageUrl
       ? [{
           url: previewImage.imageUrl,
           width: previewImage.width,

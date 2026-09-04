@@ -2,12 +2,13 @@ import { apiError, apiJson } from '@/lib/server/api';
 import { getPublicJourney } from '@/lib/server/repository';
 
 export async function GET(
-  _request: Request,
+  request: Request,
   context: { params: Promise<{ publicSlug: string }> },
 ) {
   try {
     const { publicSlug } = await context.params;
-    return apiJson(await getPublicJourney(publicSlug));
+    const includeNsfw = new URL(request.url).searchParams.get('includeNsfw') === '1';
+    return apiJson(await getPublicJourney(publicSlug, includeNsfw));
   } catch (error) {
     return apiError(error);
   }
