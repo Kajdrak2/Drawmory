@@ -12,6 +12,7 @@ type AdminDrawing = {
   createdAt: number;
   countryCode: string;
   city: string | null;
+  isNsfw: boolean;
   imageUrl: string;
 };
 
@@ -61,6 +62,7 @@ export function AdminPanel() {
   const [journeys, setJourneys] = useState<AdminJourney[]>([]);
   const [filter, setFilter] = useState('');
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [busyDrawingId, setBusyDrawingId] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [recoveryUrl, setRecoveryUrl] = useState<string | null>(null);
 
@@ -127,6 +129,55 @@ export function AdminPanel() {
   const release = (journey: AdminJourney) => {
     if (window.confirm('Libérer cette tentative ? La même étape redeviendra immédiatement disponible.')) {
       void mutate(journey, 'release');
+    }
+  };
+
+  const toggleDrawingNsfw = async (
+    journey: AdminJourney,
+    drawing: AdminDrawing,
+    isNsfw: boolean,
+  ) => {
+    setBusyDrawingId(drawing.id);
+    setMessage(null);
+    setJourneys((current) => current.map((candidate) => (
+      candidate.id === journey.id
+        ? {
+            ...candidate,
+            drawings: candidate.drawings.map((item) => (
+              item.id === drawing.id ? { ...item, isNsfw } : item
+            )),
+          }
+        : candidate
+    )));
+    let serverUpdated = false;
+    try {
+      await apiFetch(`/api/admin/drawings/${encodeURIComponent(drawing.id)}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ isNsfw, expectedUpdatedAt: journey.updatedAt }),
+      });
+      serverUpdated = true;
+      setMessage(isNsfw ? 'Dessin marqué NSFW.' : 'Marquage NSFW retiré.');
+      await loadJourneys();
+    } catch (caught) {
+      if (!serverUpdated) {
+        setJourneys((current) => current.map((candidate) => (
+          candidate.id === journey.id
+            ? {
+                ...candidate,
+                drawings: candidate.drawings.map((item) => (
+                  item.id === drawing.id ? { ...item, isNsfw: drawing.isNsfw } : item
+                )),
+              }
+            : candidate
+        )));
+      }
+      setMessage(
+        serverUpdated
+          ? 'Dessin mis à jour. Actualise la liste pour confirmer son état.'
+          : caught instanceof Error ? caught.message : 'Le marquage NSFW a échoué.',
+      );
+    } finally {
+      setBusyDrawingId(null);
     }
   };
 
@@ -233,7 +284,7 @@ export function AdminPanel() {
                   <button
                     className="secondary-button"
                     type="button"
-                    disabled={busyId === journey.id}
+                    disabled={busyId === journey.id || busyDrawingId !== null}
                     onClick={() => release(journey)}
                     data-testid={`admin-release-${journey.publicSlug}`}
                   >
@@ -246,7 +297,7 @@ export function AdminPanel() {
                 <button
                   className="admin-danger-button"
                   type="button"
-                  disabled={busyId === journey.id}
+                  disabled={busyId === journey.id || busyDrawingId !== null}
                   onClick={() => remove(journey)}
                   data-testid={`admin-delete-${journey.publicSlug}`}
                 >
@@ -272,11 +323,21 @@ export function AdminPanel() {
                       {drawing.countryCode === 'UNKNOWN' ? 'Lieu inconnu' : drawing.countryCode}
                       {drawing.city ? ` · ${drawing.city}` : ''}
                     </small>
+                    <label className={`admin-nsfw-control${drawing.isNsfw ? ' is-active' : ''}`}>
+                      <input
+                        type="checkbox"
+                        checked={drawing.isNsfw}
+                        disabled={busyId === journey.id || busyDrawingId !== null}
+                        onChange={(event) => void toggleDrawingNsfw(journey, drawing, event.target.checked)}
+                        data-testid={`admin-nsfw-${journey.publicSlug}-${drawing.stepIndex}`}
+                      />
+                      <span>NSFW</span>
+                    </label>
                     {drawing.stepIndex > 0 ? (
                       <button
                         className="admin-reset-button"
                         type="button"
-                        disabled={busyId === journey.id}
+                        disabled={busyId === journey.id || busyDrawingId !== null}
                         onClick={() => reset(journey, drawing)}
                         data-testid={`admin-reset-${journey.publicSlug}-${drawing.stepIndex}`}
                       >

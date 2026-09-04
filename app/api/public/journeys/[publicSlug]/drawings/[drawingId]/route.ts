@@ -11,7 +11,7 @@ export async function GET(
     const image = await getPublicDrawing(publicSlug, drawingId, includeNsfw);
     return new Response(image.body, {
       headers: {
-        'Cache-Control': 'public, max-age=31536000, immutable',
+        'Cache-Control': 'private, no-store',
         'Content-Type': image.mimeType,
         'Content-Security-Policy': "default-src 'none'",
         ...(image.isNsfw ? { 'X-Robots-Tag': 'noindex, nofollow' } : {}),

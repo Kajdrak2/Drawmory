@@ -69,7 +69,7 @@ export async function listAdminJourneys() {
   const placeholders = rows.results.map(() => '?').join(', ');
   const drawings = await database
     .prepare(
-      `SELECT id, journey_id, step_index, created_at, country_code, city
+      `SELECT id, journey_id, step_index, created_at, country_code, city, is_nsfw
        FROM drawings WHERE journey_id IN (${placeholders})
        ORDER BY journey_id, step_index ASC`,
     )
@@ -81,6 +81,7 @@ export async function listAdminJourneys() {
       created_at: number;
       country_code: string;
       city: string | null;
+      is_nsfw: number;
     }>();
   const drawingsByJourney = new Map<string, typeof drawings.results>();
   for (const drawing of drawings.results) {
@@ -115,9 +116,56 @@ export async function listAdminJourneys() {
       createdAt: drawing.created_at,
       countryCode: drawing.country_code,
       city: drawing.city,
+      isNsfw: Boolean(drawing.is_nsfw),
       imageUrl: `/api/admin/drawings/${encodeURIComponent(drawing.id)}`,
     })),
   }));
+}
+
+export async function setAdminDrawingNsfw(
+  drawingId: string,
+  isNsfw: boolean,
+  expectedUpdatedAt: number,
+) {
+  await ensureSchema();
+  const database = getDatabase();
+  const drawing = await database
+    .prepare(
+      `SELECT d.journey_id, d.is_nsfw, j.updated_at
+       FROM drawings d JOIN journeys j ON j.id = d.journey_id
+       WHERE d.id = ?`,
+    )
+    .bind(drawingId)
+    .first<{ journey_id: string; is_nsfw: number; updated_at: number }>();
+  if (!drawing) throw new HttpError(404, 'ADMIN_DRAWING_NOT_FOUND', 'This drawing no longer exists.');
+  if (drawing.updated_at !== expectedUpdatedAt) {
+    throw new HttpError(409, 'ADMIN_STALE_VIEW', 'This Drawmory changed. Refresh before trying again.');
+  }
+  if (Boolean(drawing.is_nsfw) === isNsfw) {
+    return { updated: false, drawingId, isNsfw, updatedAt: drawing.updated_at };
+  }
+
+  const now = operationTime(expectedUpdatedAt);
+  const results = await database.batch([
+    database
+      .prepare(
+        `UPDATE drawings SET is_nsfw = ?
+         WHERE id = ? AND journey_id = ? AND is_nsfw = ?
+           AND EXISTS (SELECT 1 FROM journeys WHERE id = ? AND updated_at = ?)`,
+      )
+      .bind(isNsfw ? 1 : 0, drawingId, drawing.journey_id, drawing.is_nsfw, drawing.journey_id, expectedUpdatedAt),
+    database
+      .prepare(
+        `UPDATE journeys SET updated_at = ?
+         WHERE id = ? AND updated_at = ?
+           AND EXISTS (SELECT 1 FROM drawings WHERE id = ? AND is_nsfw = ?)`,
+      )
+      .bind(now, drawing.journey_id, expectedUpdatedAt, drawingId, isNsfw ? 1 : 0),
+  ]);
+  if (changes(results[0]) !== 1 || changes(results[1]) !== 1) {
+    throw new HttpError(409, 'ADMIN_STALE_VIEW', 'This Drawmory changed. Refresh before trying again.');
+  }
+  return { updated: true, drawingId, isNsfw, updatedAt: now };
 }
 
 export async function getAdminDrawing(drawingId: string) {

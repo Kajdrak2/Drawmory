@@ -587,6 +587,10 @@ test('the secret owner page can reset a drawing and permanently delete a Drawmor
     data: { capability: 'wrong-capability-that-is-long-enough-0123456789' },
   });
   expect(invalidSession.status()).toBe(401);
+  const unauthorizedNsfwUpdate = await request.patch('/api/admin/drawings/missing-drawing', {
+    data: { isNsfw: true, expectedUpdatedAt: 1 },
+  });
+  expect(unauthorizedNsfwUpdate.status()).toBe(401);
 
   const creatorContext = await browser.newContext({ viewport: { width: 390, height: 844 } });
   const creator = await creatorContext.newPage();
@@ -615,6 +619,73 @@ test('the secret owner page can reset a drawing and permanently delete a Drawmor
   await expect(admin.getByRole('heading', { name: 'Administration' })).toBeVisible();
   const card = admin.getByTestId(`admin-journey-${publicSlug}`);
   await expect(card).toBeVisible();
+
+  const adminListResponse = await admin.request.get('/api/admin/journeys');
+  expect(adminListResponse.ok()).toBeTruthy();
+  const adminList = await adminListResponse.json() as {
+    journeys: Array<{
+      publicSlug: string;
+      updatedAt: number;
+      drawings: Array<{ id: string; isNsfw: boolean }>;
+    }>;
+  };
+  const managedJourney = adminList.journeys.find((journey) => journey.publicSlug === publicSlug);
+  const originalDrawing = managedJourney?.drawings[0];
+  expect(originalDrawing).toBeDefined();
+  expect(originalDrawing?.isNsfw).toBe(false);
+
+  const rejectedOrigin = await admin.request.patch(`/api/admin/drawings/${originalDrawing!.id}`, {
+    data: { isNsfw: true, expectedUpdatedAt: managedJourney!.updatedAt },
+    headers: { Origin: 'https://example.invalid' },
+  });
+  expect(rejectedOrigin.status()).toBe(403);
+
+  const initiallyVisibleImage = await admin.request.get(
+    `/api/public/journeys/${publicSlug}/drawings/${originalDrawing!.id}`,
+  );
+  expect(initiallyVisibleImage.ok()).toBeTruthy();
+  expect(initiallyVisibleImage.headers()['cache-control']).toBe('private, no-store');
+
+  const nsfwToggle = card.getByTestId(`admin-nsfw-${publicSlug}-0`);
+  await expect(nsfwToggle).not.toBeChecked();
+  await nsfwToggle.click();
+  await expect(nsfwToggle).toBeChecked();
+  await expect(nsfwToggle).toBeEnabled();
+
+  const hiddenResponse = await admin.request.get(`/api/public/journeys/${publicSlug}`);
+  expect(hiddenResponse.ok()).toBeTruthy();
+  const hiddenJourney = await hiddenResponse.json() as {
+    drawings: Array<{ id: string; isNsfw: boolean; imageUrl: string | null }>;
+  };
+  expect(hiddenJourney.drawings[0]).toMatchObject({
+    id: originalDrawing!.id,
+    isNsfw: true,
+    imageUrl: null,
+  });
+  const hiddenImage = await admin.request.get(
+    `/api/public/journeys/${publicSlug}/drawings/${originalDrawing!.id}`,
+  );
+  expect(hiddenImage.status()).toBe(404);
+
+  const staleUpdate = await admin.request.patch(`/api/admin/drawings/${originalDrawing!.id}`, {
+    data: { isNsfw: false, expectedUpdatedAt: managedJourney!.updatedAt },
+  });
+  expect(staleUpdate.status()).toBe(409);
+  await nsfwToggle.click();
+  await expect(nsfwToggle).not.toBeChecked();
+  await expect(nsfwToggle).toBeEnabled();
+
+  const visibleResponse = await admin.request.get(`/api/public/journeys/${publicSlug}`);
+  expect(visibleResponse.ok()).toBeTruthy();
+  const visibleJourney = await visibleResponse.json() as {
+    drawings: Array<{ id: string; isNsfw: boolean; imageUrl: string | null }>;
+  };
+  expect(visibleJourney.drawings[0]).toMatchObject({
+    id: originalDrawing!.id,
+    isNsfw: false,
+  });
+  expect(visibleJourney.drawings[0].imageUrl).not.toBeNull();
+
   admin.once('dialog', (dialog) => dialog.accept());
   await card.getByTestId(`admin-release-${publicSlug}`).click();
   await expect(card.getByText('Disponible en privé')).toBeVisible();

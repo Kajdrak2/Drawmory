@@ -55,7 +55,7 @@ Open `http://localhost:3000`. Local D1 and R2 emulation is configured automatica
 
 Copy `.env.example` only when timing or the trusted production origin needs to change. Production defaults are an 8-second observation, 10 minutes to redraw, a 2-minute confirmation window, and 15 minutes to optionally add a location. A local demo can shorten these windows through the corresponding `DRAWMORY_*_SECONDS` variables.
 
-Owner administration uses no account and is intentionally absent from public navigation. Configure two different long random secrets in `DRAWMORY_ADMIN_CAPABILITY` and `DRAWMORY_ADMIN_SESSION_SECRET`, then open `/manage#access=<capability>`. The fragment is exchanged for a short-lived, HTTP-only session and immediately removed from the address bar. Never commit or publish the real capability.
+Owner administration uses no account and is intentionally absent from public navigation. Configure two different long random secrets in `DRAWMORY_ADMIN_CAPABILITY` and `DRAWMORY_ADMIN_SESSION_SECRET`, then open `/manage#access=<capability>`. The fragment is exchanged for a short-lived, HTTP-only session and immediately removed from the address bar. From this interface, the owner can also add or remove the NSFW classification on any existing drawing. Never commit or publish the real capability.
 
 ## Verification
 
