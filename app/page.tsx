@@ -6,6 +6,7 @@ import { listPublicJourneys } from '@/lib/server/repository';
 export const dynamic = 'force-dynamic';
 
 export const metadata: Metadata = {
+  verification: { google: '4ZMpJjVh90a7OttfxpVxf-mrcOvNBMnfpfWdSDovpxc' },
   alternates: { canonical: '/' },
   robots: {
     index: true,

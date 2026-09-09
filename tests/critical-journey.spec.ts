@@ -375,7 +375,16 @@ test('a world journey keeps travelling automatically, stays public, inherits loc
   const nextPreview = card.getByRole('button', { name: 'Next drawing' });
   await expect(nextPreview).toBeVisible();
   await expect(card.locator('.frame-counter')).toHaveText('1/3');
+  await expect.poll(() => card.locator('.preview-images img').evaluateAll((images) =>
+    images.length === 2 && images.every((image) => (image as HTMLImageElement).complete && (image as HTMLImageElement).naturalWidth > 0),
+  )).toBe(true);
+  const previewRequests: string[] = [];
+  firstCarrier.on('request', (request) => {
+    if (request.url().includes(`/api/public/journeys/${publicSlug}/drawings/`)) previewRequests.push(request.url());
+  });
   await nextPreview.click();
+  await expect(card.locator('.preview-images img').last()).toBeVisible();
+  expect(previewRequests).toHaveLength(0);
   await nextPreview.click();
   await expect(card.locator('.frame-counter')).toHaveText('3/3');
   await expect(card.getByTestId(`journey-card-map-${publicSlug}`)).toBeVisible();

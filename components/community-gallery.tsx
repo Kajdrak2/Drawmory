@@ -11,6 +11,7 @@ import { getLanguageOption } from '@/lib/i18n';
 import { JourneyMap } from './journey-map';
 import { useContentPreferences } from './content-preferences';
 import { NsfwPlaceholder } from './nsfw-controls';
+import { PreviewImages } from './preview-images';
 
 export type JourneyCardData = {
   publicSlug: string;
@@ -189,6 +190,10 @@ export function CommunityGallery({
     return (
       <article className={`journey-card${rank ? ' fame-card' : ''}`}>
         <div className="journey-cover">
+          <PreviewImages
+            urls={previews.map((drawing) => drawing.isNsfw && !showNsfw ? null : drawing.imageUrl)}
+            activeIndex={activePreviewIndex}
+          />
           {rank ? <span className="fame-rank">#{rank}</span> : null}
           <span className={`journey-status${completed ? ' completed' : ''}`}>
             {completed ? t('finished') : t('inProgress')}
@@ -200,7 +205,7 @@ export function CommunityGallery({
           ) : previewHiddenNsfw ? (
             <NsfwPlaceholder compact />
           ) : previewImageUrl ? (
-            <img src={previewImageUrl} alt="" loading="lazy" />
+            previews.length ? null : <img src={previewImageUrl} alt="" loading="lazy" />
           ) : (
             <div className="hidden-drawing" aria-hidden="true">
               <span className="hidden-orbit"><i /></span>

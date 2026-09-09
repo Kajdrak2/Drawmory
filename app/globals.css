@@ -2934,6 +2934,20 @@ select:focus-visible {
   opacity: 0.55;
 }
 
+.preview-images {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.preview-images img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
 .admin-shell {
   min-height: 100svh;
   padding: clamp(24px, 5vw, 56px);
